@@ -1,0 +1,1737 @@
+---
+title: "HIV induced proteo-transcriptomics in Macrophages"
+author: | 
+  | Anoop Ambikan
+  | Division of Clinical Microbiology
+  | Karolinska Institutet
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_depth: 4
+    toc_float: true
+    theme: lumen
+---
+
+<style type="text/css">
+
+h1.title {
+  font-size: 35px;
+  #color: DarkRed;
+  text-align: center;
+}
+h4.author {
+  font-size: 18px;
+  font-family: "Times New Roman", Times, serif;
+  #color: DarkRed;
+  text-align: center;
+}
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Proteomics
+
+```{r, echo=FALSE}
+library(DT)
+info=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/MetaData.txt", check.names = FALSE)
+datatable(info, caption = 'Table 1: Sample metadata')
+```
+
+### Pre-processing
+
+The data was first was normalized using the package **NormalyzerDE** and then missing values were imputed using **knn method from package impute**. 
+
+```{r,warning=FALSE,message=FALSE,eval=FALSE}
+library(NormalyzerDE)
+normalyzer(jobName="Peri",designPath = "/home/anoop/Desktop/Macrophage/Proteomics/design.txt",
+           dataPath = "/home/anoop/Desktop/Macrophage/Proteomics/Raw.txt",
+           outputDir = "/home/anoop/Desktop/Macrophage/Proteomics/Normed",requireReplicates=FALSE,
+)
+
+```
+
+```{r,eval=FALSE}
+library(impute)
+
+data=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Quantile-normalized.txt",row.names = 1,check.names = FALSE)
+X=as.matrix(data)
+KNN=impute.knn(data=X ,k = 10, rowmax = 0.5, colmax = 0.8, maxp = 1500, rng.seed=362436069)
+write.table(KNN$data,file="/home/anoop/Desktop/Macrophage/Proteomics/Normed/Quantile_Imputed.txt",sep="\t",col.names = NA,quote = FALSE)
+```
+
+
+```{r,eval=FALSE}
+library(PCAtools)
+count=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Quantile_Imputed.txt",row.names = 1,check.names = FALSE)
+meta=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/MetaData.txt",row.names = 1)
+p <- PCAtools::pca(count, metadata = meta, removeVar = 0.1)
+write.table(p$rotated,file = "/home/anoop/Desktop/Macrophage/Proteomics/Normed/PCA_No_Batchcorrection.txt",sep = "\t",col.names = NA,quote = FALSE)
+head(p$variance)
+
+```
+
+```{r,fig.align = "center",fig.height=7, fig.width=10, echo=FALSE,fig.cap =c("Figure 1: PCA plot before batch correction")}
+library(ggplot2)
+library(ggrepel)
+dat=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/PCA_No_Batchcorrection.txt",row.names = 1)
+#pdf("/home/anoop/Desktop/Macrophage/Proteomics/Normed/PCA_No_Batchcorrection.pdf")
+ggplot(dat, aes(x=PC1, y=PC2,color=group)) + geom_point(size=5,aes(fill=group))+theme_gray()+
+  scale_color_manual(values=c(HC="#457979",HIV="#cc8400",E_E="#0000e5",Pool="#666666"))+
+  scale_fill_manual(values=c(HC="#5ca2a2",HIV="#ffa500",E_E="#1919ff",Pool="#808080"))+
+  geom_text_repel(data=dat,aes(x=PC1,y=PC2,label = rownames(dat)),size=1.9,box.padding=0.3,show.legend=FALSE,colour="black")+
+  labs(x="PC1, 50.04% variance",y="PC2, 32.91% variance")+
+  theme(axis.title = element_text(size=10),legend.position = "bottom",plot.margin = margin(3,3,3,3, "cm"),
+        legend.title=element_blank(),legend.text=element_text(size=10),legend.key.size = unit(0.5, "cm"))+
+  guides(shape = guide_legend(nrow = 1,override.aes=list(fill="grey",color="grey")),color = guide_legend(nrow = 2),fill = guide_legend(nrow = 2))
+#dev.off()
+```
+
+
+```{r,eval=FALSE}
+library(sva)
+prot=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Quantile_Imputed.txt",row.names = 1,check.names = FALSE)
+mat <- as.matrix(prot)
+des=read.table("/home/anoop/Desktop/Macrophage/Proteomics/MetaData.txt",sep="\t",header=TRUE)
+designCombat = model.matrix(~ des$group)
+rnaseqCombat = ComBat(mat, batch = des$batch, mod = designCombat, par.prior = TRUE, prior.plots = TRUE)
+write.table(rnaseqCombat,file="/home/anoop/Desktop/Macrophage/Proteomics/Normed/BatchCorrected.txt", sep="\t",quote=FALSE,col.names = NA)
+```
+
+```{r,eval=FALSE}
+library(PCAtools)
+count=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/BatchCorrected.txt",row.names = 1,check.names = FALSE)
+meta=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/design.txt",row.names = 1)
+p <- PCAtools::pca(count, metadata = meta, removeVar = 0.1)
+write.table(p$rotated,file = "/home/anoop/Desktop/Macrophage/Proteomics/Normed/PCA.txt",sep = "\t",col.names = NA,quote = FALSE)
+head(p$variance)
+
+```
+
+```{r,fig.align = "center",fig.height=7, fig.width=10, echo=FALSE,fig.cap =c("Figure 2: PCA plot after batch correction")}
+dat=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/PCA.txt",row.names = 1)
+#pdf("/home/anoop/Desktop/Macrophage/Proteomics/Normed/PCA.pdf")
+ggplot(dat, aes(x=PC1, y=PC2,color=group)) + geom_point(size=5,aes(fill=group))+theme_gray()+
+  scale_color_manual(values=c(HC="#457979",HIV="#cc8400",E_E="#0000e5",Pool="#666666"))+
+  scale_fill_manual(values=c(HC="#5ca2a2",HIV="#ffa500",E_E="#1919ff",Pool="#808080"))+geom_text_repel(data=dat,aes(x=PC1,y=PC2,label = rownames(dat)),size=1.9,box.padding=0.3,show.legend=FALSE,colour="black")+
+  labs(x="PC1, 61.72% variance",y="PC2, 11.52% variance")+
+  theme(axis.title = element_text(size=10),legend.position = "bottom",plot.margin = margin(3,3,3,3, "cm"),
+        legend.title=element_blank(),legend.text=element_text(size=10),legend.key.size = unit(0.5, "cm"))+
+  guides(shape = guide_legend(nrow = 1,override.aes=list(fill="grey",color="grey")),color = guide_legend(nrow = 2),fill = guide_legend(nrow = 2))
+#dev.off()
+```
+
+
+```{r,eval=FALSE}
+library(PCAtools)
+count=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/BatchCorrected.txt",row.names = 1,check.names = FALSE)
+meta=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/MetaData.txt",row.names = 1)
+p <- PCAtools::pca(count, metadata = meta, removeVar = 0.1)
+write.table(p$rotated,file = "/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/PCA.txt",sep = "\t",col.names = NA,quote = FALSE)
+head(p$variance)
+
+```
+
+```{r,fig.align = "center",fig.height=7, fig.width=10, echo=FALSE,fig.cap =c("Figure 3: PCA plot without the E-E sample")}
+dat=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/PCA_noPool.txt",row.names = 1)
+gg <- merge(dat,aggregate(cbind(mean.pc1=PC1,mean.pc2=PC2)~group,dat,mean),by="group")
+#pdf("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/PCA.pdf")
+ggplot(gg, aes(PC1,PC2,color=group))+geom_point(size=3,aes(fill=group))+
+  geom_point(aes(x=mean.pc1,y=mean.pc2),size=5)+
+  geom_segment(aes(x=mean.pc1, y=mean.pc2, xend=PC1, yend=PC2))+
+  scale_color_manual(values=c(HC="#457979",HIV="#cc8400"))+
+  scale_fill_manual(values=c(HC="#5ca2a2",HIV="#ffa500"))+
+  labs(x="PC1, 29.95% variance",y="PC2, 13.26% variance")+
+  theme(axis.title = element_text(size=10),legend.position = "bottom",plot.margin = margin(3,3,3,3, "cm"),
+        legend.title=element_blank(),legend.text=element_text(size=10),legend.key.size = unit(0.5, "cm"))+
+  guides(shape = guide_legend(nrow = 1,override.aes=list(fill="grey",color="grey")),color = guide_legend(nrow = 1),fill = guide_legend(nrow = 1))+
+  stat_ellipse(geom = "polygon",aes(fill = group), alpha = 0.15,linetype = "dotted")
+```
+
+### Differential Expression
+
+Differnetial expression analysis was perfomed for the given below pair-wise comparisons. R/bioconductor package **Limma v3.42.2** was used. Proteins with **adjusted p-value < 0.05 ** were considered as singificantly regulated.
+
+#### HC -vs- HIV
+
+```{r, eval=FALSE}
+library(limma)
+ip=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/BatchCorrected.txt",row.names = 1,check.names = FALSE)
+des=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/MetaData.txt",row.names = 1)
+head(des)
+design <- model.matrix( ~0 + group, data = des)
+fit <- lmFit(ip,design)
+cont.matrix <-makeContrasts(Mock_vs_UV_24H = (groupHIV - groupHC),
+                            levels = design)
+fit.cont <- contrasts.fit(fit, cont.matrix)
+fit.cont <- eBayes(fit.cont)
+limma.res <- topTable(fit.cont,n="Inf")
+#head(limma.res)
+write.table(limma.res,file="/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/LimmaResults.txt",sep="\t",quote = FALSE,col.names = NA)
+```
+
+```{r, echo=FALSE}
+library(DT)
+info=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/SignificantRes.txt", check.names = FALSE)
+datatable(info, caption = 'Table 2: Differential expression results (adj.p < 0.05)')
+```
+
+### Pathway enrichment
+
+```{r,warning=FALSE,message=FALSE,fig.align = "center",fig.height=7, fig.width=10,fig.cap="Figure 4 : Significantly up-regulated (orange) and down-regulated (blue) pathways (adj.p < 0.1)."}
+library(piano)
+data=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/PianoIP.txt",header = TRUE,row.names = 1)
+p <- data[4]
+lfc<-data[1]
+set.seed(123)
+geneSets <- loadGSC(file = "/home/anoop/Desktop/Transcriptome/New_RNAseq/Project2_ART/With New HC/KEGG_Selected/KEGG.gmt")
+gsares <- runGSA(geneLevelStats=p,directions=lfc,adjMethod = "BH",
+                 gsc = geneSets,
+                 nPerm = 1000)
+res=GSAsummaryTable(gsares)
+write.table(res,file="/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/Piano_KEGG.txt",sep="\t",col.names = NA,quote = FALSE)
+networkPlot2(gsares,class="distinct",adjusted=TRUE,direction="both", significance=0.1,overlap=0.2,physics = TRUE)
+```
+
+
+```{r,warning=FALSE,message=FALSE,fig.align = "center",fig.height=7, fig.width=10,fig.cap="Figure 4 : Significantly up-regulated (orange) and down-regulated (blue) pathways (adj.p < 0.1)."}
+library(piano)
+data=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/PianoIP.txt",header = TRUE,row.names = 1)
+p <- data[4]
+lfc<-data[1]
+set.seed(123)
+geneSets <- loadGSC(file = "/home/anoop/Desktop/Macrophage/AssociationNetwork/GeneSet/KEGG_Metabolism.gmt")
+gsares <- runGSA(geneLevelStats=p,directions=lfc,adjMethod = "BH",
+                 gsc = geneSets,
+                 nPerm = 1000)
+res=GSAsummaryTable(gsares)
+write.table(res,file="/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/Piano_KEGG_Metabolism.txt",sep="\t",col.names = NA,quote = FALSE)
+networkPlot2(gsares,class="distinct",adjusted=TRUE,direction="both", significance=0.1,overlap=0.2,physics = TRUE)
+```
+
+### Fianl Figures
+
+PCA plot with distance from centroids and excluding pool samples. 
+
+```{r,eval=FALSE}
+library(PCAtools)
+count=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/BatchCorrected_NoPool.txt",row.names = 1,check.names = FALSE)
+meta=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/MetaData_NoPool.txt",row.names = 1)
+p <- PCAtools::pca(count, metadata = meta, removeVar = 0.1)
+write.table(p$rotated,file = "/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/PCA_noPool.txt",sep = "\t",col.names = NA,quote = FALSE)
+head(p$variance)
+
+```
+
+
+```{r,eval=FALSE,warning=FALSE,message=FALSE,fig.align = "center",fig.height=9, fig.width=10,fig.cap="Figure 5 : PCA plot"}
+
+dat=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/PCA_noPool.txt",row.names = 1)
+gg <- merge(dat,aggregate(cbind(mean.pc1=PC1,mean.pc2=PC2)~group,dat,mean),by="group")
+#pdf("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/PCA.pdf")
+ggplot(gg, aes(PC1,PC2,color=group))+geom_point(size=3,aes(fill=group))+
+  geom_point(aes(x=mean.pc1,y=mean.pc2),size=5)+
+  geom_segment(aes(x=mean.pc1, y=mean.pc2, xend=PC1, yend=PC2))+
+  scale_color_manual(values=c(HC="#457979",HIV="#cc8400"))+
+  scale_fill_manual(values=c(HC="#5ca2a2",HIV="#ffa500"))+
+  labs(x="PC1, 29.95% variance",y="PC2, 13.26% variance")+
+  theme(axis.title = element_text(size=10),legend.position = "bottom",plot.margin = margin(3,3,3,3, "cm"),
+        legend.title=element_blank(),legend.text=element_text(size=10),legend.key.size = unit(0.5, "cm"))+
+  guides(shape = guide_legend(nrow = 1,override.aes=list(fill="grey",color="grey")),color = guide_legend(nrow = 1),fill = guide_legend(nrow = 1))+
+  stat_ellipse(geom = "polygon",aes(fill = group), alpha = 0.15,linetype = "dotted")
+#dev.off()
+```
+
+
+```{r,eval=FALSE,warning=FALSE,message=FALSE,fig.align = "center",fig.height=7, fig.width=10,fig.cap="Figure 6 : HeatMap significantly regulated proteins (adj.p<0.05)"}
+library(ComplexHeatmap)
+library(circlize)
+CelFr=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/Signi_GeneData.txt",header = TRUE,check.names = FALSE,row.names = 1)
+
+col_fun1 = colorRamp2(c(3,2,1, 0,-1,-2,-3), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+sample=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/desing.txt",row.names = 1)
+
+ha = HeatmapAnnotation(df = sample,show_annotation_name = FALSE,simple_anno_size = unit(0.2, "cm"),
+                       annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.5, "cm"),grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10))),
+                       col = list(Group=c(HC="#5ca2a2",HIV="#ffa500")))
+
+H1=Heatmap(t(scale(t(CelFr), center = TRUE, scale = TRUE)),cluster_columns = TRUE,show_column_names = FALSE,col = col_fun1,top_annotation = ha,row_split = 2,row_gap = unit(0.5, "mm"),
+           column_dend_height = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),cluster_rows = TRUE,row_title_gp = gpar(fontsize = 0),
+           heatmap_legend_param =list(grid_width = unit(0.5, "cm"),grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10),
+                                      labels_gp = gpar(fontsize = 10)),
+           name = "Zscore",show_row_names = TRUE,row_names_gp=gpar(fontsize = 5),height  = unit(12, "cm"),width  = unit(6, "cm"))
+
+#ht = draw(H1)
+LFC=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/LFC.txt",check.names = FALSE,row.names = 1)
+col_fun_lfc = colorRamp2(c(-2, -1,0, 1,2), c("#004C00","#008000","white","#E50000","#7F0000"))
+H2=Heatmap(as.matrix((LFC)),col=col_fun_lfc,cluster_rows=FALSE,cluster_columns = FALSE,name="Log2FC",width  = unit(0.25, "cm"),show_column_names = FALSE,
+           show_row_names = FALSE,column_names_side = "top",heatmap_legend_param = list(grid_width = unit(0.5, "cm"),grid_height = unit(0.5, "cm"),
+                                                                                        title_gp = gpar(fontsize = 10), labels_gp = gpar(fontsize = 10)),
+           row_names_gp =gpar(fontsize = 5),height  = unit(12, "cm"),column_names_gp =gpar(fontsize = 12),na_col = "#e6e6e6") 
+tt=H1 + H2
+#pdf("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/SigniGeneHeatMap.pdf")
+draw(tt,heatmap_legend_side = "right", annotation_legend_side = "right",merge_legend = TRUE)
+#dev.off()
+
+
+#clu = t(t(row.names(CelFr[row_order(ht)[[1]],])))
+#write.table(as.data.frame(clu),file="/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/cls1.txt",sep="\t",quote = FALSE,col.names = NA)
+
+#clu = t(t(row.names(CelFr[row_order(ht)[[2]],])))
+#write.table(as.data.frame(clu),file="/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/cls.txt",sep="\t",quote = FALSE,col.names = NA)
+
+```
+
+
+```{r,eval=FALSE,warning=FALSE,message=FALSE,fig.align = "center",fig.height=7, fig.width=10,fig.cap="Figure 7 : Significantly enriched pathways (p.adj <0.1)"}
+data2=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/SigniPWYs.txt",header = TRUE,check.names = FALSE,row.names = 1)
+col_fun3 = colorRamp2(c(0,0.001,0.01,0.5,1,1.5,2), c("white","#b5cde1","#7da7ca","#588ebb","#4682b4","#386890","#2a4e6c"))
+sf=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/type.txt",header = TRUE,row.names = 1)
+
+nrow(sf)
+ncol(data2)
+ha = HeatmapAnnotation(df = sf, height =unit(0.1, "mm"),annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 0),simple_anno_size = unit(0.2, "cm"),
+                       annotation_legend_param  = list(grid_width = unit(0.3, "cm"),grid_height = unit(0.3, "cm"),
+                                                       title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8)),
+                       col = list(type=c("a) p adj (dist.dir.dn)"="#004C00",
+                                           "b) p adj (mix.dir.dn)"="#008000","c) p adj (non-dir.)"="#808080",
+                                           "d) p adj (mix.dir.up)"="#ff6666","e) p adj (dist.dir.up)"="#e50000")))
+
+
+reg=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/reg.txt",row.names = 1)
+H1=Heatmap(as.matrix((-log10(data2))),top_annotation = ha,col=col_fun3,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,
+           row_title_gp = gpar(fontsize=0),row_gap = unit(0, "cm"),row_split = reg$reg,
+           row_dend_width = unit(1, "cm"),column_title_gp =gpar(fontsize = 0),na_col = "grey",column_split = sf$Group,column_gap = unit(0.05, "cm"),
+           heatmap_legend_param =list(grid_width = unit(0.3, "cm"),grid_height = unit(0.3, "cm"),title_gp = gpar(fontsize = 8),
+                                      labels_gp = gpar(fontsize = 8)),
+           name = "-log10(Padj)",show_row_names = TRUE,row_names_gp=gpar(fontsize = 8),height  = unit(8, "cm"),width  = unit(3, "cm"))
+
+#pdf("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/Piano.pdf")
+draw(H1,heatmap_legend_side = "right", annotation_legend_side = "right",merge_legend = TRUE,ht_gap=unit(0.1, "cm"))
+#dev.off()
+```
+
+## Transcriptomics
+
+Transcriptomics data was sequenced in **Illumina NovaSeq 6000** platform using **SMARTer Total Stranded RNA-seq, Pico input mammalian** library preparation method. The raw sequence data generated was processed and analyses using **nf-core/rnaseq** standard analysis pipeline. Human reference genome GRCh38 was used for alignment. Gene level count data generated using **Salmon v1.4.0** was used for the downstream analysis. Genes categorized as **protein coding or lincRNA** were only considered for the analysis. R/Bioconductor package **DESeq2 v1.34.0** and **Piano v2.10.0** were employed for differential expression analysis and pathway enrichment analysis respectively. KEGG pathway gene-set comprised of the pathways belonging to Metabolism, Environmental Information Processing and Organismal Systems were used for the pathway enrichment.
+
+```{r, echo=FALSE}
+library(DT)
+info=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/SamInfo.txt", check.names = FALSE)
+datatable(info, caption = 'Table 3: Sample information')
+```
+
+```{r,eval=FALSE,message=FALSE,warning=FALSE}
+library(edgeR)
+library(Biobase)
+count=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/salmon.merged.gene_counts.tsv",row.names = 1, check.names = FALSE)
+countX=as.matrix(count)
+meta=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/Sample.txt",row.names = 1)
+expSet=ExpressionSet(countX, phenoData=AnnotatedDataFrame(data=meta))
+expSet <- expSet[rowSums(exprs(expSet)) != 0, ] # to remove genes having zeros in all samples
+log2cpm <- cpm(exprs(expSet), log = TRUE)
+
+write.table(log2cpm,file="/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/LCPM.txt",sep="\t",quote = FALSE,col.names = NA)
+
+library(PCAtools)
+count=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/LCPM.txt",row.names = 1,check.names = FALSE)
+meta=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/Sample.txt",row.names = 1)
+p <- PCAtools::pca(count, metadata = meta, removeVar = 0.1)
+write.table(p$rotated,file = "/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PCA.txt",sep = "\t",col.names = NA,quote = FALSE)
+#head(p$variance)
+
+```
+
+```{r,warning=FALSE,message=FALSE,fig.align = "center",fig.height=7, fig.width=10,fig.cap="Figure 5 : PCA plot, Transcriptomics data"}
+
+dat=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PCA.txt",row.names = 1)
+gg <- merge(dat,aggregate(cbind(mean.pc1=PC1,mean.pc2=PC2)~group,dat,mean),by="group")
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PCA.pdf")
+ggplot(gg, aes(PC1,PC2,color=group))+geom_point(size=3,aes(fill=group))+
+  geom_point(aes(x=mean.pc1,y=mean.pc2),size=5)+
+  geom_segment(aes(x=mean.pc1, y=mean.pc2, xend=PC1, yend=PC2))+
+  scale_color_manual(values=c(HC="#457979",HIV="#cc8400"))+
+  scale_fill_manual(values=c(HC="#5ca2a2",HIV="#ffa500"))+
+  labs(x="PC1, 17.83% variance",y="PC2, 10.98% variance")+
+  theme(axis.title = element_text(size=10),legend.position = "bottom",plot.margin = margin(3,3,3,3, "cm"),
+        legend.title=element_blank(),legend.text=element_text(size=10),legend.key.size = unit(0.5, "cm"))+
+  guides(shape = guide_legend(nrow = 1,override.aes=list(fill="grey",color="grey")),color = guide_legend(nrow = 1),fill = guide_legend(nrow = 1))+
+  stat_ellipse(geom = "polygon",aes(fill = group), alpha = 0.15,linetype = "dotted")
+dev.off()
+```
+
+```{r,eval=FALSE}
+
+library("tximport")
+library("readr")
+library("tximportData")
+design=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/Sample.txt",header = TRUE)
+files <- file.path("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon",design$ID, "CodingCount.txt")
+names(files) <- design$ID
+txi <- tximport(files, type="salmon",txIn=FALSE,geneIdCol="Name")
+dim(txi$counts)
+library("DESeq2")
+ddsTxi <- DESeqDataSetFromTximport(txi,
+                                   colData = design,
+                                   design = ~ Condition)
+
+ds=DESeq(ddsTxi)
+res=results(ds,c("Condition","HIV","HC"),independentFiltering = FALSE)
+write.table(res,file = "/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/Results.txt",sep="\t",col.names = NA,quote = FALSE)
+```
+
+```{r,fig.height=9, fig.width=10,fig.cap="Figure 6 : Volcanoplot, Transcriptomics data",message=FALSE,warning=FALSE,fig.align = "center"}
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/GeneSymbol_Results.txt",row.names = 1)
+
+library(ggrepel)
+#pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/Volcano.pdf")
+ggplot(data, aes(x=log2FoldChange, y=-log10(padj))) + 
+  geom_label_repel(aes(label = Label),segment.color = '#cccccc',fill=NA,color="black",size=2.5,label.size = NA,nudge_y = 0.5)+
+  geom_point(data=subset(data, padj <.05 & log2FoldChange <= -1),aes(x=log2FoldChange,y=-log10(padj )),pch=21,color="#003900",fill="#326632",size=2.5)+
+  geom_point(data=subset(data, padj <.05 & log2FoldChange >= 1),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#b20000",color="#8e0000",size=2.5)+
+  geom_point(data=subset(data, padj <.05 & log2FoldChange > 0 & log2FoldChange < 1),aes(x=log2FoldChange,y=-log10(padj)),pch=21,color="#a0a000",fill="#b2b200",size=2)+
+  geom_point(data=subset(data, padj <.05 & log2FoldChange < 0 & log2FoldChange > -1),aes(x=log2FoldChange,y=-log10(padj)),pch=21,color="#a0a000",fill="#b2b200",size=2)+
+  geom_point(data=subset(data, padj >=.05),aes(x=log2FoldChange,y=-log10(padj)),color="#90b4d2",size=1.2)+
+  geom_vline(xintercept=1, linetype="dashed",size=0.35)+
+  geom_vline(xintercept=-1, linetype="dashed",size=0.35)+scale_x_continuous(limits = c(-5, 5), breaks = seq(-5, 5, by = 2))+
+  geom_hline(yintercept=1.3010299957, linetype="dashed",size=0.35)+
+  theme(legend.title=element_text(size=8),legend.text=element_text(size=6),legend.key.size=unit(0.7,"line"),
+        plot.title = element_text(hjust = 0.5,size =9),panel.grid.minor = element_blank(),
+        axis.title=element_text(size=10),axis.text.y=element_text(size=10),axis.text.x=element_text(size=10),plot.margin = margin(3,2.5,3,2.5, "cm"))+
+  labs(x="Log2 Fold Change",y="-log10 (adj.P)")
+#dev.off()
+```
+
+```{r, echo=FALSE}
+library(DT)
+info=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/SigniResults.txt", check.names = FALSE)
+datatable(info, caption = 'Table 4: Differential expression analysis results')
+```
+
+```{r,warning=FALSE,message=FALSE,fig.align = "center",fig.height=9, fig.width=10,fig.cap="Figure 7 : Significantly up-regulated (orange) and down-regulated (blue) pathways (adj.p < 0.05)."}
+?runGSA
+
+library(piano)
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PianoIP.txt",header = TRUE,row.names = 2)
+p <- data[7]
+lfc<-data[4]
+set.seed(123)
+geneSets <- loadGSC(file = "/home/anoop/Desktop/Transcriptome/New_RNAseq/Project2_ART/With New HC/KEGG_Selected/KEGG.gmt")
+gsares <- runGSA(geneLevelStats=p,directions=lfc,adjMethod = "BH",
+                 gsc = geneSets,
+                 nPerm = 1000)
+res=GSAsummaryTable(gsares)
+write.table(res,file="/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/Piano_KEGG.txt",sep="\t",col.names = NA,quote = FALSE)
+networkPlot2(gsares,class="distinct",adjusted=TRUE,direction="both", significance=0.05,overlap=0.2,physics = TRUE)
+```
+
+<center><img src="/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/GSEA/pwy.png"></center> <center>Figure 8 : Significantly up-regulated (red) and down-regulated (blue) pathways (FDR < 0.2) using GSEA software</center>
+
+```{r, eval=FALSE}
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/GSEA/SigniPathways.txt",sep = "\t")
+data$Term <- factor(data$Name, levels = data$Name)
+#pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/GSEA/SigniPathways.pdf")
+ggplot(data, aes(y=Term)) + 
+  geom_point(data=data,aes(x=1,y=Term,size=LogFDR,color=Regulation))+scale_x_discrete(limits=c("1"))+
+  scale_color_manual(values=c("Down in HIV"="#667BC4","Up in HIV"="#A83131"))+
+  scale_size(range = c(1, 5))+
+  scale_y_discrete(position = "left")+theme_bw()+
+  theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.text.y = element_text(size=10,color="black"),
+        axis.ticks = element_blank(),legend.position = c(4, 0.5),legend.box="vertical",
+        legend.key.size = unit(0.7,"line"),legend.text = element_text(size=10,colour = "black"),plot.margin = margin(4,7.2,4,2, "cm"),
+        legend.title = element_text(size=10),panel.border = element_blank(),panel.grid.major = element_blank())+
+  guides(size=guide_legend(override.aes=list(colour="grey"),title = "-log10(FDR)",ncol = 1),color=guide_legend(title = "Regulation",ncol = 1,override.aes = list(size = 5)))
+#dev.off()
+```
+
+
+```{r,eval=FALSE}
+XX=read.delim("/home/anoop/Desktop/COVID_Omics/METABOLOME/NEW_Plan/IPA/pwy.txt")
+library(ggplot2)
+library(ggalluvial)
+head(XX)
+geom_stratum(fill = c("#975d72","#2675a0","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2",
+                      "#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2","#b2b2b2"),width = 0.2) 
+  
+col=c(rep("black",24),rep("#92bacf",28))
+#pdf("/home/anoop/Desktop/COVID_Omics/METABOLOME/NEW_Plan/IPA/Pathway.pdf",height = 10,width = 7.5)
+ggplot(XX,
+       aes(axis1 = Pathway, axis2 = Metabolites)) +
+  geom_alluvium(aes(),fill="#ec8e56")+#scale_fill_manual(values = c("#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56","#ec8e56"))+
+  geom_stratum(fill = c("#98b3c2","#98b3c2","#98b3c2","#98b3c2","#98b3c2",
+                        "#98b3c2","#98b3c2","#98b3c2","#98b3c2","#98b3c2",
+                        "#98b3c2","#98b3c2","#98b3c2","#98b3c2","#A83131",
+                        "#667BC4","#667BC4","#667BC4","#A83131","#A83131",
+                        "#A83131","#667BC4","#A83131"),width = 0.2) +
+  geom_label(stat = "stratum", infer.label = TRUE,size=4) +
+  scale_x_discrete(limits = c("Pathway", "Metabolites"), expand = c(.3, .3)) +
+  theme(axis.text.y = element_blank(),axis.ticks.y=element_blank(),panel.grid = element_blank())+theme(legend.position = "none",plot.margin = margin(3,0.5,3,0.5, "cm"),
+                                                                          axis.text.x = element_text(size=15,color="black"))
+#dev.off()
+```
+
+```{r}
+
+#data=read.table("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/Bounds/Merged.txt",sep="\t",row.names=1,header=TRUE,check.names = FALSE)
+#log=log2(data)
+#head(log)
+#write.table(log,file="/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/Bounds/Log2Data.txt",sep="\t",quote=FALSE,col.names = NA)
+
+library("limma")
+sampleinfo <- read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/Bounds/Design.txt")
+group <- paste(sampleinfo$group)
+group <- factor(group)
+design <- model.matrix(~ 0 + group)
+colnames(design) <- levels(group)
+data=read.table("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/Bounds/Log2Data.txt",sep="\t",row.names=1,header=TRUE,check.names = FALSE)
+head(limma.res)
+mat <- as.matrix((data))
+fit <- lmFit(mat,design)
+cont.matrix <- makeContrasts(HCvsHIV=HIV - HC,levels=design)
+fit.cont <- contrasts.fit(fit, cont.matrix)
+fit.cont <- eBayes(fit.cont)
+limma.res <- topTable(fit.cont,coef="HCvsHIV",sort.by="p",n="Inf")
+write.table(limma.res,file="/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/Bounds/Results.txt",sep="\t",quote=FALSE,col.names = NA)
+
+```
+
+
+## Olink Data
+
+```{r}
+library(tidyverse)
+library(rstatix)
+
+data=read.delim("/home/anoop/Desktop/Macrophage/Olink/Input.txt")  # Column should be features and row should be analysis groups
+mydata <- data %>% as_tibble()
+
+mydata.long <- mydata %>%
+  pivot_longer(-Group, names_to = "variables", values_to = "value")
+
+results <- mydata.long %>% group_by(variables) %>% wilcox_test(value ~ Group) %>% adjust_pvalue(method = "BH") %>% add_significance()  ## Mann-Whitney
+
+write.table(as.data.frame(results),file="/home/anoop/Desktop/Macrophage/Olink/Mann_Whitney_results.txt",sep = "\t",col.names = NA,quote = FALSE)
+
+```
+
+```{r}
+library(dplyr)
+data=read.delim("/home/anoop/Desktop/Macrophage/Olink/Input.txt",check.names = FALSE)
+signi=data[, c("EGF","CCL19","TNFRSF4","CXCL13","ANGPT1","TNFRSF9","CD70","IL15","KLRD1","FASLG","IFN-gamma","PD-L1","PDGF subunit B","LAG3","IL13","CCL20","CXCL11","TNF","CXCL9","PDCD1","CXCL10","IL10","CD40","CCL17","IL12RB1","GZMB","CD83","CCL4")]
+
+signi$Group=data$Group
+
+Selected=signi %>% select(1:14)
+Selected$Group=signi$Group
+head(Selected)
+
+library(reshape2)
+library(ggpubr)
+library(ggplot2)
+
+M=melt(Selected,id.vars = "Group")
+
+my_comparisons = list( c("Control", "HIV"))
+pdf("/home/anoop/Desktop/Macrophage/Olink/boxPlot1.pdf",width = 15,height = 12)
+ggplot(M,aes(x=factor(Group,levels = unique(Group)),y=value,fill=Group,color=Group))+
+  geom_boxplot(outlier.shape = NA)+
+  facet_wrap(~ variable, ncol = 7,nrow = 2,scales ="free" )+
+  geom_jitter(shape=1, size=3,color="black",position=position_jitter(0.05))+
+  scale_color_manual(values=c(Control="#457979",HIV="#cc8400"))+
+  scale_fill_manual(values=c(Control="#5ca2a2",HIV="#ffa500"))+
+  theme_bw()+
+  stat_compare_means(label = "p.format",comparisons = my_comparisons,method = "wilcox.test")+
+  theme(axis.title.x = element_blank(),axis.title.y = element_blank(),legend.position ="bottom",panel.border = element_blank(),
+        strip.background = element_rect(colour="black",fill="#e5e5e5",color = "white"),
+        axis.ticks.x = element_blank(),axis.text.x = element_blank(),legend.title = element_blank(),legend.text = element_text(size = 15),
+        plot.margin = margin(4.5,1,4.5,1, "cm"),strip.text.x = element_text(size = 12),
+        axis.text.y = element_text(color="black",size=12),plot.title = element_text(hjust = 0.5,size = 15))+
+  guides(color = guide_legend(ncol = 1),fill = guide_legend(ncol = 1))
+dev.off()
+
+
+Selected=signi %>% select(15:28)
+Selected$Group=signi$Group
+head(Selected)
+
+library(reshape2)
+library(ggpubr)
+library(ggplot2)
+
+M=melt(Selected,id.vars = "Group")
+
+my_comparisons = list( c("Control", "HIV"))
+pdf("/home/anoop/Desktop/Macrophage/Olink/boxPlot2.pdf",width = 15,height = 12)
+ggplot(M,aes(x=factor(Group,levels = unique(Group)),y=value,fill=Group,color=Group))+
+  geom_boxplot(outlier.shape = NA)+
+  facet_wrap(~ variable, ncol = 7,nrow = 2,scales ="free" )+
+  geom_jitter(shape=1, size=3,color="black",position=position_jitter(0.05))+
+  scale_color_manual(values=c(Control="#457979",HIV="#cc8400"))+
+  scale_fill_manual(values=c(Control="#5ca2a2",HIV="#ffa500"))+
+  theme_bw()+
+  stat_compare_means(label = "p.format",comparisons = my_comparisons,method = "wilcox.test")+
+  theme(axis.title.x = element_blank(),axis.title.y = element_blank(),legend.position ="bottom",panel.border = element_blank(),
+        strip.background = element_rect(colour="black",fill="#e5e5e5",color = "white"),
+        axis.ticks.x = element_blank(),axis.text.x = element_blank(),legend.title = element_blank(),legend.text = element_text(size = 15),
+        plot.margin = margin(4.5,1,4.5,1, "cm"),strip.text.x = element_text(size = 12),
+        axis.text.y = element_text(color="black",size=12),plot.title = element_text(hjust = 0.5,size = 15))+
+  guides(color = guide_legend(ncol = 1),fill = guide_legend(ncol = 1))
+dev.off()
+```
+
+
+```{r, eval=FALSE}
+
+library(piano)
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PianoIP.txt",header = TRUE,row.names = 1)
+p <- data[7]
+lfc<-data[4]
+head(p)
+head(lfc)
+geneSets <- loadGSC(file = "/home/anoop/Desktop/Transcriptome/New_RNAseq/Project2_ART/With New HC/GEM/FBA/Test/HumanGEM_metabolite_GSC.gmt")
+gsares <- runGSA(geneLevelStats=p,directions=lfc,adjMethod = "BH",
+                 gsc = geneSets,geneSetStat="reporter",
+                 nPerm = 1000)
+res=GSAsummaryTable(gsares)
+write.table(res,file="/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/ReporterMets.txt",sep="\t",col.names = NA)
+```
+
+```{r, eval=FALSE}
+
+library(piano)
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PianoIP.txt",header = TRUE,row.names = 1)
+p <- data[7]
+lfc<-data[4]
+head(p)
+head(lfc)
+
+geneSets <- loadGSC(file = "/home/anoop/Desktop/COVID_Omics/Transcriptomics/DiffExp/Deseq/HC_Covid/HumanGEM_subsystem_GSC.gmt")
+gsares <- runGSA(geneLevelStats=p,directions=lfc,adjMethod = "BH",
+                 gsc = geneSets,geneSetStat="reporter",
+                 nPerm = 1000)
+ res=GSAsummaryTable(gsares)
+write.table(res,file="/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/ReporterSubSystem.txt",sep="\t",col.names = NA)
+```
+
+```{r,eval=FALSE}
+library(ComplexHeatmap)
+library(circlize)
+data1=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Figures/pval.txt",header = TRUE,check.names = FALSE,row.names = 1)
+col_fun3 = colorRamp2(c(0.008,0.006,0.004,0.003,0.001), c("#c7d9e8","#7da7ca","#4682b4","#315b7d","#23415a"))
+
+ty=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Figures/title1.txt",row.names = 1)
+
+ha = HeatmapAnnotation(df = ty, height =unit(0.1, "mm"),annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 0),simple_anno_size = unit(0.2, "cm"),
+                       annotation_legend_param  = list(grid_width = unit(0.3, "cm"),grid_height = unit(0.3, "cm"),
+                                                       title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8)),
+                       col = list(Title=c("p adj (dist.dir.up)"="#a8a7bb")))
+
+
+H1=Heatmap(as.matrix(((data1))),col=col_fun3,cluster_rows=FALSE,cluster_columns = FALSE,show_column_names = FALSE,
+           row_title_gp = gpar(fontsize=0),row_gap = unit(0, "cm"),
+           row_dend_width = unit(1, "cm"),column_title_gp =gpar(fontsize = 0),na_col = "grey",
+           heatmap_legend_param =list(grid_width = unit(0.3, "cm"),grid_height = unit(0.3, "cm"),title_gp = gpar(fontsize = 8),
+                                      labels_gp = gpar(fontsize = 8)),
+           name = "p adj (dist.dir.up)",show_row_names = TRUE,row_names_gp=gpar(fontsize = 8),height  = unit(10, "cm"),width  = unit(0.3, "cm"),row_names_side = "left")
+
+data2=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Figures/perc.txt",header = TRUE,check.names = FALSE,row.names = 1)
+col_fun2 = colorRamp2(c(10,30,60,80,100), c("#f2e8c8","#dcc26e","#bea142","#947d33","#6a5925"))
+
+ty1=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Figures/title2.txt",row.names = 1)
+
+ha = HeatmapAnnotation(df = ty1, height =unit(0.1, "mm"),annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 0),simple_anno_size = unit(0.2, "cm"),
+                       annotation_legend_param  = list(grid_width = unit(0.3, "cm"),grid_height = unit(0.3, "cm"),
+                                                       title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8)),
+                       col = list(Title=c("Percentage of regulation"="#6e6d8e")))
+
+
+H2=Heatmap(as.matrix(((data2))),col=col_fun2,cluster_rows=FALSE,cluster_columns = FALSE,show_column_names = FALSE,
+           row_title_gp = gpar(fontsize=0),row_gap = unit(0, "cm"),
+           row_dend_width = unit(1, "cm"),column_title_gp =gpar(fontsize = 0),na_col = "grey",
+           heatmap_legend_param =list(grid_width = unit(0.3, "cm"),grid_height = unit(0.3, "cm"),title_gp = gpar(fontsize = 8),
+                                      labels_gp = gpar(fontsize = 8)),
+           name = "Percentage of regulation",show_row_names = FALSE,row_names_gp=gpar(fontsize = 8),height  = unit(10, "cm"),width  = unit(0.3, "cm"))
+
+
+H3=H1+H2
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Figures/Heatamap.pdf")
+draw(H3,heatmap_legend_side = "right", annotation_legend_side = "right",merge_legend = TRUE,ht_gap=unit(0.01, "cm"))
+dev.off()
+```
+
+
+
+```{r,eval=FALSE}
+library(circlize)
+library(ComplexHeatmap)
+data2=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PianoHeatmap.txt",header = TRUE,check.names = FALSE,row.names = 1)
+
+head(data2)
+col_fun3 = colorRamp2(c(0,0.001,0.1,0.5,1,1.5,2.5), c("white","#b5cde1","#7da7ca","#588ebb","#4682b4","#386890","#2a4e6c"))
+sf=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Figures/type.txt",header = TRUE,row.names = 1)
+
+nrow(sf)
+ncol(data2)
+ha = HeatmapAnnotation(df = sf, height =unit(0.1, "mm"),annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 0),simple_anno_size = unit(0.2, "cm"),
+                       annotation_legend_param  = list(grid_width = unit(0.3, "cm"),grid_height = unit(0.3, "cm"),
+                                                       title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8)),
+                       col = list(type=c("a) p adj (dist.dir.dn)"="#004C00",
+                                           "b) p adj (mix.dir.dn)"="#008000","c) p adj (non-dir.)"="#808080",
+                                           "d) p adj (mix.dir.up)"="#ff6666","e) p adj (dist.dir.up)"="#e50000")))
+
+
+reg=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/pianoReg.txt",row.names = 1)
+
+H1=Heatmap(as.matrix((-log10(data2))),top_annotation = ha,col=col_fun3,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,
+           row_title_gp = gpar(fontsize=0),row_gap = unit(0, "cm"),row_split = reg$reg,
+           row_dend_width = unit(1, "cm"),column_title_gp =gpar(fontsize = 0),na_col = "grey",column_split = sf$Group,column_gap = unit(0.05, "cm"),
+           heatmap_legend_param =list(grid_width = unit(0.3, "cm"),grid_height = unit(0.3, "cm"),title_gp = gpar(fontsize = 8),
+                                      labels_gp = gpar(fontsize = 8)),
+           name = "-log10(Padj)",show_row_names = TRUE,row_names_gp=gpar(fontsize = 8),height  = unit(15, "cm"),width  = unit(2, "cm"))
+
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PianoHeatmap.pdf")
+draw(H1,heatmap_legend_side = "right", annotation_legend_side = "right",merge_legend = TRUE,ht_gap=unit(0.1, "cm"))
+dev.off()
+```
+
+```{r}
+library(PCAtools)
+#count=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/OlinkData.txt",row.names = 1,check.names = FALSE)
+#meta=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/design.txt",row.names = 1)
+#rownames(meta)
+#colnames(count)
+#p <- PCAtools::pca(count, metadata = meta, removeVar = 0.1)
+#write.table(p$rotated,file = "/home/anoop/Desktop/Macrophage/Olink/PCA/All_data_PCA.txt",sep = "\t",col.names = NA,quote = FALSE)
+#head(p$variance)
+
+
+dat=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/All_data_PCA.txt",row.names = 1)
+gg <- merge(dat,aggregate(cbind(mean.pc1=PC1,mean.pc2=PC2)~group,dat,mean),by="group")
+pdf("/home/anoop/Desktop/Macrophage/Olink/PCA/All_data_PCA.pdf")
+ggplot(gg, aes(PC1,PC2,color=group))+geom_point(size=3,aes(fill=group))+
+  geom_point(aes(x=mean.pc1,y=mean.pc2),size=5)+
+  geom_segment(aes(x=mean.pc1, y=mean.pc2, xend=PC1, yend=PC2))+
+  scale_color_manual(values=c(HC="#457979",HIV="#cc8400"))+
+  scale_fill_manual(values=c(HC="#5ca2a2",HIV="#ffa500"))+
+  labs(x="PC1, 65.6% variance",y="PC2, 8.37% variance")+
+  theme(axis.title = element_text(size=10),legend.position = "bottom",plot.margin = margin(3,3,3,3, "cm"),
+        legend.title=element_blank(),legend.text=element_text(size=10),legend.key.size = unit(0.5, "cm"))+
+  guides(shape = guide_legend(nrow = 1,override.aes=list(fill="grey",color="grey")),color = guide_legend(nrow = 1),fill = guide_legend(nrow = 1))+
+  stat_ellipse(geom = "polygon",aes(fill = group), alpha = 0.15,linetype = "dotted")
+dev.off()
+```
+
+
+```{r}
+library(PCAtools)
+#count=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/SIgniData.txt",row.names = 1,check.names = FALSE)
+#meta=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/design.txt",row.names = 1)
+
+#p <- PCAtools::pca(count, metadata = meta, removeVar = 0.1)
+#write.table(p$rotated,file = "/home/anoop/Desktop/Macrophage/Olink/PCA/Signi_data_PCA.txt",sep = "\t",col.names = NA,quote = FALSE)
+#head(p$variance)
+
+
+dat=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/Signi_data_PCA.txt",row.names = 1)
+gg <- merge(dat,aggregate(cbind(mean.pc1=PC1,mean.pc2=PC2)~group,dat,mean),by="group")
+pdf("/home/anoop/Desktop/Macrophage/Olink/PCA/Signi_data_PCA.pdf")
+ggplot(gg, aes(PC1,PC2,color=group))+geom_point(size=3,aes(fill=group))+
+  geom_point(aes(x=mean.pc1,y=mean.pc2),size=5)+
+  geom_segment(aes(x=mean.pc1, y=mean.pc2, xend=PC1, yend=PC2))+
+  scale_color_manual(values=c(HC="#457979",HIV="#cc8400"))+
+  scale_fill_manual(values=c(HC="#5ca2a2",HIV="#ffa500"))+
+  labs(x="PC1, 76.91% variance",y="PC2, 6.41% variance")+
+  theme(axis.title = element_text(size=10),legend.position = "bottom",plot.margin = margin(3,3,3,3, "cm"),
+        legend.title=element_blank(),legend.text=element_text(size=10),legend.key.size = unit(0.5, "cm"))+
+  guides(shape = guide_legend(nrow = 1,override.aes=list(fill="grey",color="grey")),color = guide_legend(nrow = 1),fill = guide_legend(nrow = 1))+
+  stat_ellipse(geom = "polygon",aes(fill = group), alpha = 0.15,linetype = "dotted")
+dev.off()
+```
+
+
+```{r,eval=FALSE}
+library(ComplexHeatmap)
+library(circlize)
+CelFr=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/OlinkData.txt",header = TRUE,check.names = FALSE,row.names = 1)
+
+col_fun1 = colorRamp2(c(3,2,1, 0,-1,-2,-3), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+col_fun1 = colorRamp2(c(3,2,1, 0,-1,-2,-3), c("#7F7F00","#B2B200" ,"#E5E500","white","#5D5DFF","#4C4CFF","#0000CC"))
+sample=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/design.txt",row.names = 1)
+
+ha = HeatmapAnnotation(df = sample,show_annotation_name = FALSE,simple_anno_size = unit(0.2, "cm"),
+                       annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.35, "cm"),grid_height = unit(0.35, "cm"),title_gp = gpar(fontsize = 8), 
+                                                                   labels_gp = gpar(fontsize = 8))),
+                       col = list(Group=c(HC="#5ca2a2",HIV="#ffa500")))
+
+col_pval = colorRamp2(c(1,0.5,0.1,0.05,0.01,0.002), c("#ffffff","#e4d7e5","#b088b3","#976e99","#755677","#543d55"))
+col_fun_lfc = colorRamp2(c(-1.5, -1,0, 0.25,0.5), c("#004C00","#008000","white","#E50000","#7F0000"))
+
+LFC=data=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/LFC2.txt",row.names = 1)
+ha2 = rowAnnotation(na_col = "#999999",df = LFC,show_annotation_name = FALSE,simple_anno_size = unit(0.2, "cm"),
+                       annotation_legend_param = list(L2FC = list(direction = "horizontal",grid_width = unit(0.35, "cm"),
+                                                                          grid_height = unit(0.35, "cm"),title_gp = gpar(fontsize = 8), 
+                                                                          labels_gp = gpar(fontsize = 8))),
+                       col = list(L2FC=col_fun_lfc))
+
+ha3 = rowAnnotation(foo = anno_mark(at = c(3,8,9,10,13,18,21,22,28,29,31,33,35,36,41,46,48,50,51,52,62,63,76,78,79,83,86,87),
+                                   labels_gp = gpar(fontsize=6),lines_gp = gpar(col="#8e8e8e"),link_width=unit(3, "mm"),labels = c("ANGPT1","CCL17","CCL19","CCL20","CCL4","CD40","CD70","CD83","CXCL10","CXCL11","CXCL13","CXCL9","EGF","FASLG","GZMB","IFN-gamma","IL10","IL12RB1","IL13","IL15","KLRD1","LAG3","PD-L1","PDCD1","PDGF subunit B","TNF","TNFRSF4","TNFRSF9")))
+
+H1=Heatmap(t(scale(t(CelFr), center = TRUE, scale = TRUE)),cluster_columns = TRUE,show_column_names = FALSE,col = col_fun1,top_annotation = ha
+           ,row_gap = unit(0.5, "mm"),left_annotation = ha2,right_annotation = ha3,
+           column_dend_height = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),cluster_rows = TRUE,row_title_gp = gpar(fontsize = 0),
+           heatmap_legend_param =list(grid_width = unit(0.35, "cm"),grid_height = unit(0.35, "cm"),title_gp = gpar(fontsize = 8),
+                                      labels_gp = gpar(fontsize = 8)),
+           name = "Zscore",show_row_names = FALSE,row_names_gp=gpar(fontsize = 5),height  = unit(10, "cm"),width  = unit(6, "cm"))
+
+
+pdf("/home/anoop/Desktop/Macrophage/Olink/PCA/HeatMap.pdf")
+draw(H1,heatmap_legend_side = "right", annotation_legend_side = "right",merge_legend = TRUE)
+dev.off()
+```
+
+
+
+```{r,eval=FALSE}
+library(psych)
+library(reshape2)
+prot=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/CIrcularHeatMap/OlinkData.txt",check.names=FALSE,header = TRUE)
+clini=read.delim("/home/anoop/Desktop/Macrophage/Olink/PCA/CIrcularHeatMap/DataClini.txt",check.names = FALSE,header = TRUE)
+Res=corr.test(as.matrix(prot),as.matrix(clini),use = "pairwise",method="spearman",adjust="BH")
+
+
+corr=melt(Res$r)
+pval=melt(Res$p)
+
+corr$G1=pval$Var1
+corr$G2=pval$Var2
+corr$pvalue=pval$value
+
+write.table(corr,file="/home/anoop/Desktop/Macrophage/Olink/PCA/CIrcularHeatMap/Results.txt",sep="\t",col.names = NA,quote = FALSE)
+
+```
+
+```{r, eval=FALSE}
+data=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Temp/pwy.txt",sep = "\t",row.names = 1)
+library(ggrepel)
+
+pdf("/home/anoop/Desktop/Macrophage/Proteomics/Temp/pwy.pdf")
+ggplot(data, aes(x=Genes, y=lpval)) + theme_bw()+
+  geom_label_repel(aes(label = rownames(data)),segment.color = '#cccccc',fill=NA,color="black",size=3,label.size = NA,segment.alpha=1,
+                   box.padding=0.95,nudge_x = 1.8,nudge_y = -0.01)+
+  geom_point(data=data,aes(x=Genes, y=lpval, size=lpval,color=Dir))+
+  scale_size(range = c(3, 10))+
+  theme(legend.title=element_text(size=8),legend.text=element_text(size=6),legend.key.size=unit(0.7,"line"),
+        axis.title.y=element_text(size=15),legend.position = "bottom",axis.ticks.x = element_blank(),panel.grid.minor = element_blank(),
+        axis.title.x=element_blank(),axis.text.x =element_text(size=10,color="black",vjust =67),plot.margin = margin(3,0.5,3,0.5, "cm"))+
+  guides(size=guide_legend(override.aes=list(color="grey",fill="grey")))
+dev.off()
+```
+
+
+```{r, eval=FALSE}
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/GSEA/Results.txt",sep = "\t",row.names = 1)
+head(data)
+library(ggrepel)
+
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/GSEA/Results.pdf",width = 12,height = 10)
+ggplot(data, aes(x=LogFDR, y=NES)) + theme_bw()+
+  geom_label_repel(aes(label = Label_Up),segment.color = '#cccccc',fill=NA,color="black",size=3.5,label.size = NA,segment.alpha=1,
+                   box.padding=0.95,nudge_x = 0.5,nudge_y = -0.18)+
+  geom_label_repel(aes(label = Label_Dn),segment.color = '#cccccc',fill=NA,color="black",size=3.5,label.size = NA,segment.alpha=1,
+                   box.padding=0.95,nudge_x = 0.1,nudge_y = 0.1,max.overlaps = 200)+
+  geom_point(data=subset(data, FDR>0.2),aes(x=LogFDR, y=NES, size=LogFDR),color="#bfbfbf")+
+  geom_point(data=subset(data,FDR<0.2 & NES<0),aes(x=LogFDR, y=NES, size=LogFDR,color=LogFDR))+
+  scale_color_gradient(low = "#ccccff", high = "#0000e5")+
+  geom_point(data=subset(data,FDR<0.2 & NES>0),aes(x=LogFDR, y=NES, size=LogFDR,fill=LogFDR),color="transparent",shape=21)+
+  scale_fill_gradient(low = "#ff9999", high = "#7f0000")+
+  scale_size(range = c(1, 10))+labs(x="-log10(FDR)",y="Normalized Enrichment Score",size="-log10(FDR)",color="-log10(FDR) Down",fill="-log10(FDR) Up")+
+  theme(legend.title=element_text(size=15),legend.text=element_text(size=13),legend.key.size=unit(0.7,"line"),
+        axis.title.y=element_text(size=15),legend.position = "right",
+        axis.title.x=element_text(size=15),axis.text =element_text(size=14,color="black"),plot.margin = margin(7,5,7,5, "cm"))+
+  guides(size=guide_legend(override.aes=list(color="grey",fill="grey")))
+dev.off()
+```
+
+
+
+```{r, eval=FALSE}
+data=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/Signi_Piano.txt",sep = "\t")
+head(data)
+data$Term <- factor(data$Name, levels = data$Name)
+#pdf("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/Signi_Piano.pdf")
+ggplot(data, aes(y=Term)) + theme_bw()+
+  geom_point(data=data,aes(x=1,y=Term,size=lpval,color=Dir))+scale_x_discrete(limits=c("1"))+
+  scale_color_manual(values=c("Down"="#6a9bc3","Up"="#ffae19"))+
+  scale_size(range = c(3, 5))+
+  scale_y_discrete(position = "left")+
+  theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.text.y = element_text(size=10,color="black"),
+        axis.ticks = element_blank(),legend.position = "right",legend.box="vertical",
+        legend.key.size = unit(0.7,"line"),legend.text = element_text(size=10,colour = "black"),plot.margin = margin(4.5,3,4,3, "cm"),
+        legend.title = element_text(size=10))+
+  guides(size=guide_legend(override.aes=list(colour="grey"),title = "-log10(FDR)",ncol = 1),color=guide_legend(title = "Regulation",ncol = 1,override.aes = list(size = 5)))
+#dev.off()
+```
+
+
+## M1 M2 Markers Volcanoplort
+```{r,fig.height=9, fig.width=10,message=FALSE,warning=FALSE,fig.align = "center"}
+data=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/RNASeqResults_M1.txt",row.names = 1)
+
+library(ggrepel)
+pdf("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/RNASeqResults_M1.pdf")
+ggplot(data, aes(x=log2FoldChange, y=-log10(padj))) +theme_bw()+
+    geom_point(data=subset(data, Type == "Other" & padj >=.05),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#d8d8d8",color="#bfbfbf",size=2)+
+  geom_point(data=subset(data, Type == "Other" & padj <.05 & log2FoldChange < 0),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#d7ddea",color="#9daccb",size=2.5)+
+  geom_point(data=subset(data, Type == "Other" & padj <.05 & log2FoldChange > 0),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#efefcc",color="#d8d87f",size=2.5)+
+  geom_point(data=subset(data,Type == "M1" & log2FoldChange < 0),aes(x=log2FoldChange,y=-log10(padj )),pch=21,color="#2f4779",fill="#3b5998",size=2.5)+
+  geom_point(data=subset(data,Type == "M1" & log2FoldChange > 0),aes(x=log2FoldChange,y=-log10(padj )),pch=21,color="#666600",fill="#e5e500",size=2.5)+
+  geom_label_repel(aes(label = Label),segment.color = '#999999',fill=NA,color="black",size=2.5,label.size = NA,nudge_y = 0.75,nudge_x = -0.5,max.overlaps = 200)+
+  geom_vline(xintercept=0, linetype="dashed",size=0.35)+
+  scale_x_continuous(limits = c(-5, 5), breaks = seq(-5, 5, by = 2))+
+  geom_hline(yintercept=1.3010299957, linetype="dashed",size=0.35)+
+  theme(legend.title=element_text(size=8),legend.text=element_text(size=6),legend.key.size=unit(0.7,"line"),
+        plot.title = element_text(hjust = 0.5,size =9),panel.grid.minor = element_blank(),
+        axis.title=element_text(size=10),axis.text.y=element_text(size=10),axis.text.x=element_text(size=10),plot.margin = margin(4.5,4,4.5,4, "cm"))+
+  labs(x="Log2 Fold Change",y="-log10 (p.adj)")
+dev.off()
+```
+
+
+
+```{r,fig.height=9, fig.width=10,message=FALSE,warning=FALSE,fig.align = "center"}
+data=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/RNASeqResults_M2.txt",row.names = 1)
+
+library(ggrepel)
+#pdf("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/RNASeqResults_M2.pdf")
+ggplot(data, aes(x=log2FoldChange, y=-log10(padj))) +theme_bw()+
+   geom_point(data=subset(data, Type == "Other" & padj >=.05),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#d8d8d8",color="#bfbfbf",size=2)+
+  geom_point(data=subset(data, Type == "Other" & padj <.05 & log2FoldChange < 0),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#d7ddea",color="#9daccb",size=2.5)+
+  geom_point(data=subset(data, Type == "Other" & padj <.05 & log2FoldChange > 0),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#efefcc",color="#d8d87f",size=2.5)+
+  geom_point(data=subset(data,Type == "M2" & log2FoldChange < 0),aes(x=log2FoldChange,y=-log10(padj )),pch=21,color="#2f4779",fill="#3b5998",size=2.5)+
+  geom_point(data=subset(data,Type == "M2" & log2FoldChange > 0),aes(x=log2FoldChange,y=-log10(padj )),pch=21,color="#666600",fill="#e5e500",size=2.5)+
+  geom_label_repel(aes(label = Label),segment.color = '#999999',fill=NA,color="black",size=2.5,label.size = NA,nudge_y = 0.75,nudge_x = -0.25,max.overlaps = 400)+
+  geom_label_repel(aes(label = Label2),segment.color = '#999999',fill=NA,color="black",size=2.5,label.size = NA,nudge_y = 0.75,nudge_x = 0.25,max.overlaps = 400)+
+  geom_vline(xintercept=0, linetype="dashed",size=0.35)+
+  scale_x_continuous(limits = c(-5, 5), breaks = seq(-5, 5, by = 2))+
+  geom_hline(yintercept=1.3010299957, linetype="dashed",size=0.35)+
+  theme(legend.title=element_text(size=8),legend.text=element_text(size=6),legend.key.size=unit(0.7,"line"),
+        plot.title = element_text(hjust = 0.5,size =9),panel.grid.minor = element_blank(),
+        axis.title=element_text(size=10),axis.text.y=element_text(size=10),axis.text.x=element_text(size=10),plot.margin = margin(4.5,4,4.5,4, "cm"))+
+  labs(x="Log2 Fold Change",y="-log10 (p.adj)")
+#dev.off()
+```
+
+
+```{r,fig.height=9, fig.width=10,message=FALSE,warning=FALSE,fig.align = "center"}
+library(ComplexHeatmap)
+library(circlize)
+clini=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/Sample.txt",row.names = 1)
+head(clini)
+
+ha1 = HeatmapAnnotation(df = clini,show_annotation_name = FALSE,annotation_name_side = "right",simple_anno_size = unit(0.2, "cm"), height = unit(3, "cm"),
+                        annotation_legend_param = list(Condition = list(direction = "horizontal",grid_width = unit(0.25, "cm"),
+                                                                        grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8))),
+                        col = list(Condition=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+
+Gene=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/Type.txt",row.names = 1)
+nrow(Gene)
+
+ha2 = rowAnnotation(df = Gene,show_annotation_name = FALSE,simple_anno_size = unit(0.2, "cm"),
+                    annotation_legend_param = list(Type = list(Type = "horizontal",grid_width = unit(0.25, "cm"),
+                                                               grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8))),
+                    col = list(Type=c("M1"="#006600","M2"="#934c93")))
+
+col_fun1 = colorRamp2(c(4,3,1, 0,-1,-3,-4), c("#7F7F00","#B2B200" ,"#E5E500","white","#5D5DFF","#4C4CFF","#0000CC"))
+data=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/Marker_TPM.txt",row.names = 1)
+
+nrow(t(scale(t(data))))
+
+H1=Heatmap(as.matrix(t(scale(t(data)))),col=col_fun1,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,row_title_gp  = gpar(fontsize=0),
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),row_gap = unit(2, "mm"),column_gap = unit(0.5, "mm"),left_annotation= ha2,row_split = Gene$Type,
+           top_annotation  =ha1,heatmap_legend_param =list(grid_width = unit(0.25, "cm"),grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8),
+                                                           labels_gp = gpar(fontsize = 8)),
+           name = "Z-Score(TPM)",show_row_names = TRUE,row_names_gp=gpar(fontsize = 6),height  = unit(12, "cm"),width  = unit(6, "cm"),
+           column_split =clini$Condition,)
+
+lfc=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/Marker_LFC.txt",row.names = 1)
+col_fun2 = colorRamp2(c(-1.5, -1,0, 1,1.5), c("#004C00","#008000","white","#E50000","#7F0000"))
+H2=Heatmap(as.matrix(lfc),col=col_fun2,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,row_title_gp  = gpar(fontsize=0),
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),row_gap = unit(2, "mm"),column_gap = unit(0.5, "mm"),row_split = Gene$Type,
+           heatmap_legend_param =list(grid_width = unit(0.25, "cm"),grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8),
+                                      labels_gp = gpar(fontsize = 8)),
+           name = "L2FC",show_row_names = TRUE,row_names_gp=gpar(fontsize = 5),height  = unit(7, "cm"),width  = unit(0.25, "cm"))
+H=H1+H2
+pdf("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/Marker.pdf")
+draw(H,merge_legend = TRUE)
+dev.off()
+```
+
+
+```{r,fig.height=9, fig.width=10,fig.cap="Figure 6 : Volcanoplot, Transcriptomics data",message=FALSE,warning=FALSE,fig.align = "center"}
+data=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/LimmaResults.txt",row.names = 1)
+
+library(ggrepel)
+#pdf("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/LimmaResults.pdf")
+ggplot(data, aes(x=log2FoldChange, y=-log10(padj))) + 
+  geom_label_repel(aes(label = Label),segment.color = '#cccccc',fill=NA,color="black",size=2.5,label.size = NA,nudge_y = 0.5)+
+  geom_point(data=subset(data, padj <.05 & log2FoldChange < 0),aes(x=log2FoldChange,y=-log10(padj),color=abs(log2FoldChange),size=-log10(padj)))+
+  scale_color_gradient(low = "yellow", high = "#2c766f")+
+  geom_point(data=subset(data, padj <.05 & log2FoldChange > 0),
+             aes(x=log2FoldChange,y=-log10(padj),fill=abs(log2FoldChange),size=-log10(padj)),pch=21,color="transparent")+
+  scale_fill_gradient(low = "yellow", high = "#b20000")+
+  geom_point(data=subset(data, padj >=.05),aes(x=log2FoldChange,y=-log10(padj)),color="grey",size=1.2)+
+  geom_vline(xintercept=0, linetype="dashed",size=0.35)+
+  scale_x_continuous(limits = c(-2, 2), breaks = seq(-2, 2, by = 1))+
+  geom_hline(yintercept=1.3010299957, linetype="dashed",size=0.35)+
+  theme(legend.title=element_text(size=8),legend.text=element_text(size=6),legend.key.size=unit(0.7,"line"),
+        plot.title = element_text(hjust = 0.5,size =9),panel.grid.minor = element_blank(),
+        axis.title=element_text(size=10),axis.text.y=element_text(size=10),axis.text.x=element_text(size=10),plot.margin = margin(4.25,2.25,4.25,2.25, "cm"))+
+  labs(x="Log2 Fold Change",y="-log10 (adj.P)")
+#dev.off()
+```
+
+```{r,fig.height=9, fig.width=10,message=FALSE,warning=FALSE,fig.align = "center"}
+library(ComplexHeatmap)
+library(circlize)
+clini=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/Proteom_Group.txt",row.names = 1)
+
+ha1 = HeatmapAnnotation(df = clini,show_annotation_name = FALSE,annotation_name_side = "right",simple_anno_size = unit(0.2, "cm"), height = unit(3, "cm"),
+                        annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.25, "cm"),
+                                                                        grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8))),
+                        col = list(Group=c("Healthy"="#5ca2a2","HIV"="#ffa500")))
+
+
+Gene=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/Proteom_Type.txt",row.names = 1)
+
+ha2 = rowAnnotation(df = Gene,show_annotation_name = FALSE,simple_anno_size = unit(0.2, "cm"),
+                    annotation_legend_param = list(Type = list(Type = "horizontal",grid_width = unit(0.25, "cm"),
+                                                               grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8))),
+                    col = list(Type=c("M1"="#a29890","M2"="#934c93")))
+
+
+col_fun1 = colorRamp2(c(1.5,1, 0,-1,-1.5), c("#450c5b","#453883","#21888c","#a9db35","#fbe81d"))
+
+data=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/Proteom_M1_M2.txt",row.names = 1)
+
+H1=Heatmap(as.matrix(t(scale(t(data)))),col=col_fun1,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,row_title_gp  = gpar(fontsize=0),
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),row_gap = unit(1, "mm"),column_gap = unit(0.5, "mm"),left_annotation= ha2,row_split = Gene$Type,
+           top_annotation  =ha1,heatmap_legend_param =list(grid_width = unit(0.25, "cm"),grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8),
+                                                           labels_gp = gpar(fontsize = 8)),
+           name = "Z-Score",show_row_names = TRUE,row_names_gp=gpar(fontsize = 6),height  = unit(8, "cm"),width  = unit(6, "cm"),
+           column_split =clini$Group)
+
+lfc=read.delim("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/Proteom_LFC.txt",row.names = 1)
+col_fun2 = colorRamp2(c(-1, -0.25,0, 0.25,1), c("#0000ff","#b2b2ff","white","#E50000","#7F0000"))
+H2=Heatmap(as.matrix(lfc),col=col_fun2,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,row_title_gp  = gpar(fontsize=0),
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),row_gap = unit(2, "mm"),column_gap = unit(0.5, "mm"),row_split = Gene$Type,
+           heatmap_legend_param =list(grid_width = unit(0.25, "cm"),grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8),
+                                      labels_gp = gpar(fontsize = 8)),
+           name = "L2FC",show_row_names = TRUE,row_names_gp=gpar(fontsize = 5),height  = unit(5, "cm"),width  = unit(0.25, "cm"))
+H=H1+H2
+pdf("/home/anoop/Desktop/Macrophage/M1_M2/List_from_Sia/volcano/Proteome_M1_M2.pdf")
+draw(H,merge_legend = TRUE)
+dev.off()
+```
+
+```{r}
+XX=read.delim("/home/anoop/Desktop/Macrophage/AssociationNetwork/FIsher/Sankey/Data.txt",header = T)
+head(XX)
+library(ggplot2)
+library(ggalluvial)
+
+pdf("/home/anoop/Desktop/Macrophage/AssociationNetwork/FIsher/Sankey/Pathway.pdf")
+ggplot(XX,
+       aes(axis1 = Transcriptomics, axis2 = Pathway,axis3=Proteomics)) +
+  geom_alluvium(aes(fill=Transcriptomics))+scale_fill_manual(values = c("#87afcf","#68d0bb"))+
+    geom_stratum(color=NA,fill = c("#d47d7d","#c4d080",NA,NA,NA,NA,NA,NA,NA,
+NA,NA,NA,NA,NA,NA,NA,NA,NA,"#a1ced8","#c9a0c7","#56b5ff"),width = 0.2) +
+  geom_label(stat = "stratum", infer.label = TRUE,size=3,label.size = NA,fill=NA) +
+  scale_x_discrete(limits = c("Transcriptomics","Pathway", "Proteomics"), expand = c(.1, .1)) +
+  theme(axis.text.y = element_blank(),axis.ticks.y=element_blank())+theme(legend.position = "none",axis.text.x = element_text(size=12,color="black"),plot.margin = margin(2,4,2,4, "cm"))
+dev.off()
+```
+
+
+
+```{r, eval=FALSE}
+
+library(piano)
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PianoIP.txt",header = TRUE,row.names = 1)
+p <- data[7]
+lfc<-data[4]
+head(p)
+head(lfc)
+geneSets <- loadGSC(file = "/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Filtered_Analysis/DB/Mitochondrial_MetsFinal.gmt")
+gsares <- runGSA(geneLevelStats=p,directions=lfc,adjMethod = "BH",
+                 gsc = geneSets,geneSetStat="reporter",gsSizeLim=c(20,Inf),
+                 nPerm = 1000)
+res=GSAsummaryTable(gsares)
+write.table(res,file="/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Filtered_Analysis/DB/ReporterMets20.txt",sep="\t",col.names = NA)
+```
+
+```{r}
+XX=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Filtered_Analysis/DB/Sankey/Mitochondria.txt",header = T)
+head(XX)
+library(ggplot2)
+library(ggalluvial)
+
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Filtered_Analysis/DB/Sankey/Mitochondria.pdf")
+ggplot(XX,
+       aes(axis1 = Name, axis2 = PWY)) +theme_bw()+
+  geom_alluvium(aes(fill=Name)) +scale_fill_manual(values = c("2-methyl-3-oxopropanoate"="#cdb98e","acetate"="#a38c5c","acetyl-CoA"="#866f3f","acrylyl-CoA"="#66501f","AKG"="#ddbec1",
+                                   "CoA"="#f8abb3","ferricytochrome C"="#ee98a0","ferrocytochrome C"="#e1939b","glutamate"="#ca848b",
+                                   "GSH"="#a8cf97","GSSG"="#93c47d","isobutyryl-CoA"="#84b070","L-lactate"="#759c64","lipoamide"="#668957",
+                                   "propanoyl-CoA"="#9dd7ef","pyruvate"="#87ceeb","succinate"="#71c5e7","ubiquinol"="#5bbce4","ubiquinone"="#45b3e0"))+
+    geom_stratum(color=NA,fill = c("#005073","#107dac","#189ad3","#1ebbd7","#71c7ec","#293c1f","#274e13","#38761d","#6aa84f","#93c47d","#902731","#a93b45","#d56671","#ea7f89","#f796a0","#563d07","#79602a","#99804a","#c1a872","#b19c9c","#ffc966","#c3cb71","#ae5a41","#559e83","#5a5255","#1b85b8"),width = 0.15) +
+  geom_label(stat = "stratum", infer.label = TRUE,size=2.5,label.size = NA,fill=NA) +
+  scale_x_discrete(limits = c("Mitochondrial metabolites","Pathway"), expand = c(0.65, .65)) +
+  theme(axis.text.y = element_blank(),axis.ticks.y=element_blank())+theme(legend.position = "none",axis.text.x = element_text(size=12,color="black"),plot.margin = margin(2.5,2.5,2.5,2.5, "cm"),panel.grid.minor = element_blank(),panel.grid.major = element_blank())
+dev.off()
+```
+
+
+```{r}
+XX=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Filtered_Analysis/DB/Sankey/Cytoplasm.txt",header = T)
+head(XX)
+library(ggplot2)
+library(ggalluvial)
+
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Filtered_Analysis/DB/Sankey/Cytoplasm.pdf")
+ggplot(XX,
+       aes(axis1 = Name, axis2 = PWY)) +theme_bw()+
+  geom_alluvium(aes(fill=Name)) +scale_fill_manual(values = c("(R)-S-lactoylglutathione"="#cdb98e","acetyl-CoA"="#a38c5c","AKG"="#866f3f","CoA"="#faccd1","cysteine"="#f9bbc2",
+                                   "D-lactaldehyde"="#f8abb3","fructose-6-phosphate"="#ee98a0","glycine"="#e1939b","L-lactate"="#b9d8ab",
+                                   "lactaldehyde"="#a8cf97","leucine"="#93c47d","methylglyoxal"="#84b070","oxidized thioredoxin"="#759c64",
+                                   "propanoyl-CoA"="#b0dff2",
+                                   "pyruvate"="#9dd7ef","serine"="#87ceeb","thioredoxin"="#71c5e7","UDP-N-acetylglucosamine"="#5bbce4"))+
+    geom_stratum(color=NA,fill = c("#005073","#107dac","#189ad3","#1ebbd7","#71c7ec","#293c1f","#274e13","#38761d","#6aa84f","#93c47d","#902731","#a93b45","#d56671","#ea7f89","#f796a0","#563d07","#79602a","#99804a","#b19c9c","#ffc966","#c3cb71","#7b9ca1","#559e83","#5a5255","#1b85b8","#ff7373"),width = 0.15) +
+  geom_label(stat = "stratum", infer.label = TRUE,size=2.5,label.size = NA,fill=NA,) +
+  scale_x_discrete(limits = c("Cytoplasmic metabolites","Pathway"), expand = c(0.65, .65)) +
+  theme(axis.text.y = element_blank(),axis.ticks.y=element_blank())+theme(legend.position = "none",axis.text.x = element_text(size=12,color="black"),plot.margin = margin(2.5,2.5,2.5,2.5, "cm"),panel.grid.minor = element_blank(),panel.grid.major = element_blank())
+dev.off()
+```
+
+
+```{r, eval=FALSE}
+
+library(piano)
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/Salmon/PianoIP.txt",header = TRUE,row.names = 1)
+p <- data[7]
+lfc<-data[4]
+head(p)
+head(lfc)
+geneSets <- loadGSC(file = "/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Filtered_Analysis/DB/Cytoplasm/Cytoplasm_Mets_Final.gmt")
+gsares <- runGSA(geneLevelStats=p,directions=lfc,adjMethod = "BH",
+                 gsc = geneSets,geneSetStat="reporter",gsSizeLim=c(10,Inf),
+                 nPerm = 1000)
+res=GSAsummaryTable(gsares)
+write.table(res,file="/home/anoop/Desktop/Macrophage/Transcriptomics/ReporterMets/Filtered_Analysis/DB/Cytoplasm/ReporterMets10.txt",sep="\t",col.names = NA)
+```
+
+
+
+```{r,fig.height=9, fig.width=10,message=FALSE,warning=FALSE,fig.align = "center"}
+library(ComplexHeatmap)
+library(circlize)
+clini=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/Final/Heatmap/Group.txt",row.names = 1)
+
+ha1 = HeatmapAnnotation(df = clini,show_annotation_name = FALSE,annotation_name_side = "right",simple_anno_size = unit(0.2, "cm"), 
+                        height = unit(3, "cm"),
+                        annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.25, "cm"),
+                                                                        grid_height = unit(0.25, "cm"),
+                                                                    title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8))),
+                        col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+
+col_fun1 = colorRamp2(c(3,2,1, 0,-1,-2,-3), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/Final/Heatmap/Gene_TPM_LFC.txt",row.names = 1)
+
+H1=Heatmap(as.matrix(t(scale(t(data)))),col=col_fun1,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,row_title_gp  = gpar(fontsize=0),
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),row_gap = unit(1, "mm"),column_gap = unit(0.5, "mm"),
+           top_annotation  =ha1,heatmap_legend_param =list(grid_width = unit(0.25, "cm"),grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8),
+                                                           labels_gp = gpar(fontsize = 8)),
+           name = "Z-Score(TPM)",show_row_names = TRUE,row_names_gp=gpar(fontsize = 6),height  = unit(15, "cm"),width  = unit(5, "cm"),
+           column_split =clini$Group)
+
+lfc=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/Final/Heatmap/GeneLFC.txt",row.names = 1)
+col_fun2 = colorRamp2(c(-1, -0.25,0, 0.25,1), c("#0000ff","#b2b2ff","white","#E50000","#7F0000"))
+H2=Heatmap(as.matrix(lfc),col=col_fun2,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,row_title_gp  = gpar(fontsize=0),
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),row_gap = unit(2, "mm"),column_gap = unit(0.5, "mm"),
+           heatmap_legend_param =list(grid_width = unit(0.25, "cm"),grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8),
+                                      labels_gp = gpar(fontsize = 8)),
+           name = "L2FC",show_row_names = TRUE,row_names_gp=gpar(fontsize = 3),height  = unit(5, "cm"),width  = unit(0.25, "cm"))
+H=H1+H2
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/Final/Heatmap/Heatmap.pdf")
+draw(H,merge_legend = TRUE,ht_gap=unit(1, "mm"))
+dev.off()
+```
+
+
+
+```{r,fig.height=9, fig.width=10,message=FALSE,warning=FALSE,fig.align = "center"}
+library(ComplexHeatmap)
+library(circlize)
+clini=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/Final/Heatmap/Group.txt",row.names = 1)
+
+ha1 = HeatmapAnnotation(df = clini,show_annotation_name = FALSE,annotation_name_side = "right",simple_anno_size = unit(0.2, "cm"), 
+                        height = unit(3, "cm"),
+                        annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.25, "cm"),
+                                                                        grid_height = unit(0.25, "cm"),
+                                                                    title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8))),
+                        col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+
+col_fun1 = colorRamp2(c(2,1,0.5, 0,-0.5,-1,-2), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/Final/Heatmap/SigniTPM.txt",row.names = 1)
+
+H1=Heatmap(as.matrix(t(scale(t(data)))),col=col_fun1,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,row_title_gp  = gpar(fontsize=0),
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),row_gap = unit(1, "mm"),column_gap = unit(0.5, "mm"),
+           top_annotation  =ha1,heatmap_legend_param =list(grid_width = unit(0.25, "cm"),grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8),
+                                                           labels_gp = gpar(fontsize = 8)),
+           name = "Z-Score(TPM)",show_row_names = TRUE,row_names_gp=gpar(fontsize = 15),height  = unit(5, "cm"),width  = unit(5, "cm"),
+           column_split =clini$Group)
+
+lfc=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/Final/Heatmap/SigniLFC.txt",row.names = 1)
+col_fun2 = colorRamp2(c(-1, -0.25,0, 0.25,1), c("#0000ff","#b2b2ff","white","#E50000","#7F0000"))
+H2=Heatmap(as.matrix(lfc),col=col_fun2,cluster_rows=TRUE,cluster_columns = FALSE,show_column_names = FALSE,row_title_gp  = gpar(fontsize=0),
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),row_gap = unit(2, "mm"),column_gap = unit(0.5, "mm"),
+           heatmap_legend_param =list(grid_width = unit(0.25, "cm"),grid_height = unit(0.25, "cm"),title_gp = gpar(fontsize = 8),
+                                      labels_gp = gpar(fontsize = 8)),
+           name = "L2FC",show_row_names = TRUE,row_names_gp=gpar(fontsize = 7),height  = unit(5, "cm"),width  = unit(0.25, "cm"))
+H=H1+H2
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/Final/Heatmap/HeatmapSigni.pdf")
+draw(H,merge_legend = TRUE,ht_gap=unit(1, "mm"))
+dev.off()
+```
+
+
+
+```{r}
+XX=read.delim("/home/anoop/Desktop/Macrophage/AssociationNetwork/Fisher_Metabolism/SankeyInput.txt",header = T)
+head(XX)
+library(ggplot2)
+library(ggalluvial)
+
+pdf("/home/anoop/Desktop/Macrophage/AssociationNetwork/Fisher_Metabolism/SankeyInput.pdf")
+ggplot(XX,
+       aes(axis1 = Transcriptomics, axis2 = Pathway,axis3=Proteomics)) +
+  geom_alluvium(aes(fill=Proteomics))+scale_fill_manual(values = c("#588ebb"))+
+    geom_stratum(color=NA,fill = c("#7f0000",NA,NA,NA,NA,NA,NA,NA,NA,
+NA,NA,NA,NA,NA,NA,NA,NA,"#595900",NA),width = 0.2) +
+  geom_label(stat = "stratum", infer.label = TRUE,size=3,label.size = NA,fill=NA) +
+  scale_x_discrete(limits = c("Transcriptomics","Pathway", "Proteomics"), expand = c(.1, .1)) +
+  theme(axis.text.y = element_blank(),axis.ticks.y=element_blank())+theme(legend.position = "none",axis.text.x = element_text(size=10,color="black"),plot.margin = margin(3,5,3,5, "cm"))
+dev.off()
+```
+
+
+```{r}
+XX=read.delim("/home/anoop/Desktop/Macrophage/AssociationNetwork/Fisher_Metabolism/SankeyInput2.txt",header = T)
+head(XX)
+library(ggplot2)
+library(ggalluvial)
+
+pdf("/home/anoop/Desktop/Macrophage/AssociationNetwork/Fisher_Metabolism/SankeyInpu2.pdf")
+ggplot(XX,
+       aes(axis1 = Transcriptomics, axis2 = Pathway,axis3=Proteomics)) +
+  geom_alluvium(aes(fill=Proteomics))+scale_fill_manual(values = c("#588ebb"))+
+    geom_stratum(color=NA,fill = c("#7f0000",NA,NA,NA,
+NA,"#595900",NA),width = 0.2) +
+  geom_label(stat = "stratum", infer.label = TRUE,size=3,label.size = NA,fill=NA) +
+  scale_x_discrete(limits = c("Transcriptomics","Pathway", "Proteomics"), expand = c(.1, .1)) +
+  theme(axis.text.y = element_blank(),axis.ticks.y=element_blank())+theme(legend.position = "none",axis.text.x = element_text(size=10,color="black"),plot.margin = margin(3,5,3,5, "cm"))
+dev.off()
+```
+
+
+```{r}
+tmp=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/KEGG_ENrichr/Input.txt")
+
+pdf("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/KEGG_ENrichr/Pathway.pdf")
+ ggplot(data=tmp, aes(x=factor(Pathway,levels = unique(Pathway)), y=Percentage, fill=Regulation))+ylab("% Proteins")+
+   scale_y_continuous(breaks = seq(0, 100, by = 25))+
+  geom_bar(stat="identity", position=position_dodge(),width = 0.7)+coord_flip()+
+   scale_fill_manual(values = c(Down="#006600",Up="#ce0000"))+theme_bw()+
+  theme(axis.title.y = element_blank(),axis.title.x = element_text(size=12),plot.margin = margin(4,7.5,4,7, "cm"),
+        panel.grid.major = element_blank(),
+        axis.text.y =element_blank(),axis.text.x = element_text(size=12,color="black"),
+        legend.position = c(2, 0.5),legend.key.size = unit(0.4, "cm"),panel.border = element_blank(),
+        legend.text = element_text(size=12),legend.title = element_text(size=12),axis.ticks.y = element_blank())+guides(fill=guide_legend(title="Regulation"))
+
+dev.off() 
+```
+
+
+```{r}
+data=read.delim("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/KEGG_ENrichr/Bubble.txt")
+head(data)
+library(ggplot2)
+data$Term <- factor(data$Term, levels = data$Term)
+pdf("/home/anoop/Desktop/Macrophage/Proteomics/Normed/Final/KEGG_ENrichr/BubblePwy.pdf")
+  ggplot(data, aes(y=Term)) + 
+  geom_point(data=data,aes(x=1,y=Term,size=Overlap,color=lpval))+scale_x_discrete(limits=c("1"))+
+    scale_color_gradient(low="#ca9358",high="#71481c")+
+  scale_y_discrete(position = "left")+theme_bw()+
+  theme(axis.title = element_blank(),axis.text.x = element_blank(),axis.text.y = element_text(size=10,color="black"),
+        axis.ticks = element_blank(),legend.position = c(-4.5, -0.2),legend.box="vertical",
+        legend.key.size = unit(0.7,"line"),legend.text = element_text(size=12,colour = "black"),
+        legend.title = element_text(size=12),panel.border = element_blank(),panel.grid.major = element_blank(),plot.margin = margin(4,8.5,4,1.5, "cm"))+
+  guides(size=guide_legend(override.aes=list(colour="grey"),title = "% Overlap",nrow = 1),color=guide_legend(title = "-log10(padj)",nrow = 1,override.aes = list(size = 5)))
+dev.off()
+```
+
+```{r}
+library(reshape)
+R=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/NETWORK/NET/Filtered/results/Communities/Splitted/Degree/Heatmap/Top10_Metabolites.tab",header = TRUE)
+head(R)
+Cas=cast(R)
+head(Cas)
+write.table(Cas,file="/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/NETWORK/NET/Filtered/results/Communities/Splitted/Degree/Heatmap/Top10_MetabolitesCasted.txt",sep="\t",col.names = NA,quote = FALSE)
+```
+
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+
+chrt <- read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/NETWORK/NET/Filtered/results/Communities/Splitted/Degree/Heatmap/Info.txt",row.names = 1,header = TRUE)
+
+chrt_anno = HeatmapAnnotation(df = chrt, simple_anno_size = unit(0.5, "cm"),annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 0),
+                              annotation_legend_param  = list(grid_width = unit(1.5, "cm"),grid_height = unit(1.5, "cm"),
+                                                              title_gp = gpar(fontsize = 25), labels_gp = gpar(fontsize = 25)),
+                              col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+Mets=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/NETWORK/NET/Filtered/results/Communities/Splitted/Degree/Heatmap/MetsHeatmap.txt",row.names = 1)
+
+
+
+col_gene = colorRamp2(c(0,50,75,90,110,140,150), 
+                      c("#f2f2f2","#d7a8a8","#c37d7d","#af5252","#9c2727","#7c1f1f","#5d1717"))
+
+H1=Heatmap(as.matrix((Mets)),col=col_gene,cluster_rows=TRUE,cluster_columns = TRUE,
+           show_column_names = FALSE,row_title_gp =gpar(fontsize = 0),column_split = chrt$Group,
+           row_dend_width = unit(2, "cm"),column_title_gp =gpar(fontsize = 0),column_names_gp =gpar(fontsize = 15),
+           column_dend_height =unit(2, "cm"), 
+           top_annotation = chrt_anno,clustering_distance_columns = "euclidean",
+           row_gap = unit(2, "mm"),column_gap = unit(2, "mm"),
+           heatmap_legend_param = list(grid_width = unit(1.5, "cm"),grid_height = unit(1.5, "cm"),at = c(0,50,75,100,125,150),
+                                                                                          title_gp = gpar(fontsize = 25),
+                                       labels_gp = gpar(fontsize = 25)),
+           name = "Degree",show_row_names = TRUE,
+           row_names_gp=gpar(fontsize = 25),height  = unit(35, "cm"),width  = unit(20, "cm"))
+
+
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/NETWORK/NET/Filtered/results/Communities/Splitted/Degree/Heatmap/MetsHeatmap.txt.pdf",height = 25,width =30)
+draw(H1, merge_legend = TRUE,ht_gap = unit(0.3, "cm"),heatmap_legend_side = "right", annotation_legend_side = "bottom")
+dev.off()
+
+```
+
+
+
+```{r}
+library(ComplexHeatmap)
+library(circlize)
+
+chrt <- read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/NETWORK/NET/Filtered/results/Communities/Splitted/Degree/Heatmap/Info.txt",row.names = 1,header = TRUE)
+
+chrt_anno = HeatmapAnnotation(df = chrt, simple_anno_size = unit(0.2, "cm"),annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 0),
+                              annotation_legend_param  = list(grid_width = unit(0.5, "cm"),grid_height = unit(0.5, "cm"),
+                                                              title_gp = gpar(fontsize = 8), labels_gp = gpar(fontsize = 8)),
+                              col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+Mets=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/NETWORK/NET/Filtered/results/Communities/Splitted/Degree/Heatmap/Selected_Mets.txt",row.names = 1)
+
+
+
+col_gene = colorRamp2(c(0,50,75,90,110,140,150), 
+                      c("#f2f2f2","#f3e4e4","#efdcdc","#af5252","#9c2727","#7c1f1f","#5d1717"))
+
+col_gene = colorRamp2(c(0,60,70,75,80,120), 
+                      c("grey","#1c3448","#4682b4","#90b4d2","#7c1f1f","#5d1717"))
+
+
+col_gene = colorRamp2(c(0,60,70,80,90), 
+                      c("grey","#1E90FF","#125699","#323232","#000000"))
+
+H1=Heatmap(as.matrix((Mets)),col=col_gene,cluster_rows=TRUE,cluster_columns = TRUE,
+           show_column_names = FALSE,row_title_gp =gpar(fontsize = 0),column_split = chrt$Group,
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),column_names_gp =gpar(fontsize = 15),
+           column_dend_height =unit(0.5, "cm"), 
+           top_annotation = chrt_anno,clustering_distance_columns = "euclidean",
+           row_gap = unit(2, "mm"),column_gap = unit(2, "mm"),
+           heatmap_legend_param = list(grid_width = unit(0.5, "cm"),grid_height = unit(0.5, "cm"),at = c(0,50,100),
+                                                                                          title_gp = gpar(fontsize = 8),
+                                       labels_gp = gpar(fontsize = 8)),
+           name = "Degree",show_row_names = TRUE,
+           row_names_gp=gpar(fontsize = 8),height  = unit(3, "cm"),width  = unit(7, "cm"))
+
+
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/Personal_GEM/FBA/Merged/Analysis/NETWORK/NET/Filtered/results/Communities/Splitted/Degree/Heatmap/Selected.pdf")
+draw(H1, merge_legend = TRUE,ht_gap = unit(0.3, "cm"),heatmap_legend_side = "right", annotation_legend_side = "bottom")
+dev.off()
+
+```
+
+
+```{r}
+library(circlize)
+library(ComplexHeatmap)
+
+chrt=read.delim("/home/anoop/Desktop/Macrophage/ReactionDiagram/Info.txt",row.names = 1)
+
+chrt_anno = HeatmapAnnotation(df = chrt, simple_anno_size = unit(0.2, "cm"),annotation_name_side = "left",
+                              annotation_name_gp = gpar(fontsize = 0),
+                              annotation_legend_param  = list(grid_width = unit(0.5, "cm"),
+                                                              grid_height = unit(0.5, "cm"),
+                                                              title_gp = gpar(fontsize = 8),
+                                                              labels_gp = gpar(fontsize = 8)),
+                              col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+
+
+FBA=read.delim("/home/anoop/Desktop/Macrophage/ReactionDiagram/Heat.txt",row.names = 1)
+
+
+col_fun1 = colorRamp2(c(1000,900,875,850,825,800,775,750,725,700,600,400,200, 0,
+                        -200,-400,-600,-700,-725,-750,-775,-800,-825,-850,-875,-900,-1000), c("#590000","#660000","#730000","#721616","#821919","#921c1c","#a32020","#ac3636","#b54c4c","#b54c4c","#c77979","#daa5a5","#ecd2d2","#e5e5e5","#b5cde1","#a2c0d9","#90b4d2","#7da7ca","#6a9bc3","#588ebb","#4682b4","#3f75a2","#386890","#315b7d","#2a4e6c","#23415a","#1c3448"))
+
+
+H1=Heatmap(as.matrix((FBA)),col=col_fun1,cluster_rows=TRUE,cluster_columns = TRUE,show_column_names = FALSE,na_col = "white",
+           row_title_gp =gpar(fontsize = 0),column_split = chrt$Group,
+           row_dend_width = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),
+           column_names_gp =gpar(fontsize = 12),column_dend_height =unit(0.5, "cm"), 
+           top_annotation = chrt_anno,clustering_distance_columns = "euclidean",column_gap = unit(1, "mm"),
+           heatmap_legend_param = list(grid_width = unit(0.5, "cm"),grid_height = unit(0.5, "cm"),
+                                       title_gp = gpar(fontsize = 8), at = c(1000,750,500,250,0,-250,-500,-750,-1000),
+                                       labels_gp = gpar(fontsize = 8)),
+           name = "Flux",show_row_names = TRUE,row_names_gp=gpar(fontsize = 8),
+           height  = unit(6, "cm"),width  = unit(10, "cm"))
+
+pdf("/home/anoop/Desktop/Macrophage/ReactionDiagram/Heat.pdf")
+draw(H1, merge_legend = TRUE)
+dev.off()
+```
+
+
+```{r}
+library(dplyr)
+data=read.delim("/home/anoop/Desktop/Macrophage/ReactionDiagram/BoxIP.txt",check.names = FALSE)
+
+library(reshape2)
+library(ggpubr)
+library(ggplot2)
+
+M=melt(data,id.vars = "Group")
+
+my_comparisons = list( c("HC", "HIV"))
+pdf("/home/anoop/Desktop/Macrophage/ReactionDiagram/BoxIP.pdf")
+ggplot(M,aes(x=factor(Group,levels = unique(Group)),y=value,fill=Group,color=Group))+
+  geom_boxplot(outlier.shape = NA)+
+  facet_wrap(~ variable, ncol = 4,nrow = 1,scales ="free" )+
+  geom_jitter(shape=1, size=2,color="black",position=position_jitter(0.05))+
+  scale_color_manual(values=c(HC="#457979",HIV="#cc8400"))+
+  scale_fill_manual(values=c(HC="#5ca2a2",HIV="#ffa500"))+
+  theme_bw()+
+  stat_compare_means(label = "p.format",comparisons = my_comparisons,method = "wilcox.test",size=3)+
+  theme(axis.title.x = element_blank(),axis.title.y = element_blank(),legend.position ="bottom",panel.border = element_blank(),
+        strip.background = element_rect(colour="black",fill="#e5e5e5",color = "white"),
+        axis.ticks.x = element_blank(),axis.text.x = element_blank(),legend.title = element_blank(),legend.text = element_text(size = 8),
+        plot.margin = margin(4.5,1,4.5,1, "cm"),strip.text.x = element_text(size = 8),
+        axis.text.y = element_text(color="black",size=8),plot.title = element_text(hjust = 0.5,size = 8))+
+  guides(color = guide_legend(ncol = 1),fill = guide_legend(ncol = 1))
+dev.off()
+
+```
+
+```{r}
+library(reshape)
+R=read.delim("/home/anoop/Desktop/Macrophage/NewOLINK/OneDrive_1_8-22-2022/NPx.txt",header = TRUE)
+head(R)
+Cas=cast(R,fun.aggregate=mean)
+head(Cas)
+write.table(t(Cas),file="/home/anoop/Desktop/Macrophage/NewOLINK/OneDrive_1_8-22-2022/NPxCastedTr.txt",sep="\t",col.names = NA,quote = FALSE)
+```
+
+
+```{r}
+dd=read.delim("/home/anoop/Desktop/Macrophage/ReactionDiagram/barIP.txt")
+pdf("/home/anoop/Desktop/Macrophage/ReactionDiagram/barIP.pdf")
+ggplot(data=dd, aes(x=Mets, y=Count, fill=Compartment)) +
+  geom_bar(stat="identity")+coord_flip()+theme_bw()+
+  scale_fill_manual(values=c(Cytoplasm="#3380f2",Extracellular="#de5d83"))+
+  theme(axis.title.x = element_blank(),axis.title.y = element_blank(),legend.position ="bottom",
+        axis.text.x = element_text(color="black",size=8),
+        panel.grid.major = element_blank(),
+        legend.title = element_blank(),legend.text = element_text(size = 8),
+        plot.margin = margin(6.2,6,6.2,6, "cm"),strip.text.x = element_text(size = 8),
+        axis.text.y = element_text(color="black",size=8),plot.title = element_text(hjust = 0.5,size = 9))+
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, by = 2))
+dev.off()
+```
+
+
+
+```{r,eval=FALSE}
+library(ComplexHeatmap)
+library(circlize)
+Grp=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Heatmap/RXNS.txt",header = TRUE,check.names = FALSE,row.names = 1)
+
+
+
+sample=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Heatmap/SamInfo.txt",row.names = 1)
+
+ha = HeatmapAnnotation(df = sample,show_annotation_name = FALSE,simple_anno_size = unit(0.3, "cm"),
+                       annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.5, "cm"),
+                                                                   grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10))),
+                       col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+sample2=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Heatmap/SamInfo2.txt",row.names = 1)
+
+ha2 = HeatmapAnnotation(df = sample2,show_annotation_name = FALSE,simple_anno_size = unit(0.3, "cm"),
+                       annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.5, "cm"),
+                                                                   grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10))),
+                       col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+col_fun1 = colorRamp2(c(1000,750,500, 0,-500,-750,-1000), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+col_fun1 = colorRamp2(c(1000,500,150,0,-150,-500,-1000), c("#ffff00","#cccc00","#7f7f00","white","#999999","#4c4c4c","#000000"))
+col_fun1 = colorRamp2(c(1000,0,-1000), c("#ffff00","black","#0000ff"))
+
+info2=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Heatmap/RXNInfo.txt",row.names = 1)
+ha3 = rowAnnotation(df = info2,show_annotation_name = FALSE,simple_anno_size = unit(0.3, "cm"),
+                       annotation_legend_param = list(direction = "horizontal",grid_width = unit(0.5, "cm"),
+                                                      grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10)),
+                       col = list(SubSystem=c("Amino acid metabolism"="#49614b",
+                       "Carnitine shuttle (mitochondrial)"="#77677a",
+                       "Other"="#bfbfbf","Glutathione metabolism"="#eecff4",
+                       "Glycolysis / Gluconeogenesis"="#908fb2",
+                       "Nucleotide metabolism"="#cecdff","Pentose phosphate pathway"="#5a928b",
+                       "Other transport reactions"="#9f8170","Amino acid transport"="#a5dba9","Porphyrin metabolism"="#97f4e9",
+                       "Purine metabolism"="#e66f6b","Pyrimidine metabolism"="#f2b7b5","Starch and sucrose metabolism"="#628baf",
+                       "TCA Cycle"="#a7d8de")))
+
+H1=Heatmap(Grp,cluster_columns = FALSE,show_column_names = FALSE,col = col_fun1,top_annotation = ha,row_dend_width = unit(1, "cm"),
+           ,row_gap = unit(1.25, "mm"),left_annotation = ha3,row_split = info2$SubSystem,row_dend_reorder = TRUE,
+           column_split = sample$Group,
+           column_dend_height = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),cluster_rows = TRUE,row_title_gp = gpar(fontsize = 0),
+           heatmap_legend_param =list(grid_width = unit(0.5, "cm"),grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10),
+                                      labels_gp = gpar(fontsize = 10)),
+           name = "Flux",show_row_names = FALSE,row_names_gp=gpar(fontsize = 12),height  = unit(15, "cm"),width  = unit(1.5, "cm"))
+
+Pers=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Heatmap/Selected_Personal.txt",header = TRUE,check.names = FALSE,row.names = 1)
+
+H2=Heatmap(Pers,cluster_columns = FALSE,show_column_names = FALSE,col = col_fun1,top_annotation = ha2,row_dend_width = unit(0.5, "cm"),
+           ,row_gap = unit(0.5, "mm"),row_split = info2$SubSystem,row_dend_reorder = TRUE,
+           column_split = sample2$Group,
+           column_dend_height = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),cluster_rows = TRUE,row_title_gp = gpar(fontsize = 0),
+           heatmap_legend_param =list(grid_width = unit(0.5, "cm"),grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10),
+                                      labels_gp = gpar(fontsize = 10)),
+           name = "Flux",show_row_names = FALSE,row_names_gp=gpar(fontsize = 12),height  = unit(20, "cm"),width  = unit(12, "cm"))
+
+tt=H1+H2
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Heatmap/HeatMap.pdf",width = 12,height = 12)
+draw(tt,heatmap_legend_side = "right", annotation_legend_side = "right",merge_legend = TRUE)
+dev.off()
+```
+
+
+```{r}
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/ AminoAcids_TCA/GroupFC/AA.txt",row.names = 1)
+LL=log2(data)
+head(LL)
+write.table(LL,file="/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/ AminoAcids_TCA/GroupFC/AA_Log2.txt",sep="\t",col.names = NA,quote = FALSE)
+
+
+data=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/ AminoAcids_TCA/GroupFC/TCA.txt",row.names = 1)
+LL=log2(data)
+head(LL)
+write.table(LL,file="/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/ AminoAcids_TCA/GroupFC/TCA_Log2.txt",sep="\t",col.names = NA,quote = FALSE)
+```
+
+
+```{r,eval=FALSE}
+library(ComplexHeatmap)
+library(circlize)
+
+sample=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/GroupInfo.txt",
+                  row.names = 1)
+
+ha = HeatmapAnnotation(df = sample,show_annotation_name = FALSE,simple_anno_size = unit(0.3, "cm"),
+                       annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.5, "cm"),
+                                                                   grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10))),
+                       col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+
+sample2=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Personal_Info.txt",
+                   row.names = 1)
+
+ha2 = HeatmapAnnotation(df = sample2,show_annotation_name = FALSE,simple_anno_size = unit(0.3, "cm"),
+                       annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.5, "cm"),
+                                                                   grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10))),
+                       col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+
+
+col_fun1 = colorRamp2(c(1000,750,500, 0,-500,-750,-1000), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+col_fun1 = colorRamp2(c(1000,500,150,0,-150,-500,-1000), c("#ffff00","#cccc00","#7f7f00","white","#999999","#4c4c4c","#000000"))
+col_fun1 = colorRamp2(c(1000,0,-1000), c("#ffff00","black","#0000ff"))
+
+info2=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Rxn_info.txt",row.names = 1)
+ha3 = rowAnnotation(df = info2,show_annotation_name = FALSE,simple_anno_size = unit(0.3, "cm"),
+                       annotation_legend_param = list(direction = "horizontal",grid_width = unit(0.5, "cm"),
+                                                      grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10)),
+                       col = list(SubSystem=c("AA_transport"="#cecdff","Other_transport"="#a5dba9")))
+
+Grp=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Group_trans.txt",
+                 header = TRUE,check.names = FALSE,row.names = 1)
+
+H1=Heatmap(Grp,cluster_columns = FALSE,show_column_names = FALSE,col = col_fun1,top_annotation = ha,row_dend_width = unit(0.5, "cm"),
+           ,row_gap = unit(0.5, "mm"),left_annotation = ha3,row_split = info2$SubSystem,row_dend_reorder = TRUE,
+           column_split = sample$Group,column_dend_height = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),
+           cluster_rows = TRUE,row_title_gp = gpar(fontsize = 0),heatmap_legend_param =list(grid_width = unit(0.5, "cm"),
+                                                                                            grid_height = unit(0.5, "cm"),
+                                                                                            title_gp = gpar(fontsize = 10),
+                                                                                            labels_gp = gpar(fontsize = 10)),
+           name = "Flux",show_row_names = FALSE,row_names_gp=gpar(fontsize = 12),height  = unit(15, "cm"),width  = unit(2, "cm"))
+
+Pers=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Personal_trans.txt",
+                 header = TRUE,check.names = FALSE,row.names = 1)
+
+H2=Heatmap(Pers,cluster_columns = TRUE,show_column_names = FALSE,col = col_fun1,top_annotation = ha2,row_dend_width = unit(0.5, "cm"),
+           ,row_gap = unit(0.5, "mm"),row_split = info2$SubSystem,row_dend_reorder = TRUE,
+           column_split = sample2$Group,column_dend_height = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),
+           cluster_rows = TRUE,row_title_gp = gpar(fontsize = 0),heatmap_legend_param =list(grid_width = unit(0.5, "cm"),
+                                                                                            grid_height = unit(0.5, "cm"),
+                                                                                            title_gp = gpar(fontsize = 10),
+                                                                                            labels_gp = gpar(fontsize = 10)),
+           name = "Flux",show_row_names = FALSE,row_names_gp=gpar(fontsize = 12),height  = unit(15, "cm"),width  = unit(10, "cm"))
+
+
+tt=H1+H2
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Transport.pdf",width = 12,height = 12)
+draw(tt,heatmap_legend_side = "right", annotation_legend_side = "right",merge_legend = TRUE)
+dev.off()
+```
+
+
+```{r,eval=FALSE}
+library(ComplexHeatmap)
+library(circlize)
+
+sample=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Label/GroupInfo.txt",
+                  row.names = 1)
+
+ha = HeatmapAnnotation(df = sample,show_annotation_name = FALSE,simple_anno_size = unit(0.3, "cm"),
+                       annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.5, "cm"),
+                                                                   grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10))),
+                       col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+
+sample2=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Label/Personal_Info.txt",
+                   row.names = 1)
+
+ha2 = HeatmapAnnotation(df = sample2,show_annotation_name = FALSE,simple_anno_size = unit(0.3, "cm"),
+                       annotation_legend_param = list(Group = list(direction = "horizontal",grid_width = unit(0.5, "cm"),
+                                                                   grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10))),
+                       col = list(Group=c("HC"="#5ca2a2","HIV"="#ffa500")))
+
+
+
+col_fun1 = colorRamp2(c(1000,750,500, 0,-500,-750,-1000), c("#7F7F00","#B2B200" ,"#E5E500","white","#BF7FBF","#993299","#590059"))
+col_fun1 = colorRamp2(c(1000,500,150,0,-150,-500,-1000), c("#ffff00","#cccc00","#7f7f00","white","#999999","#4c4c4c","#000000"))
+col_fun1 = colorRamp2(c(1000,0,-1000), c("#ffff00","black","#0000ff"))
+
+
+
+info2=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Label/Rxn_info.txt",row.names = 1)
+ha3 = rowAnnotation(df = info2,show_annotation_name = FALSE,simple_anno_size = unit(0.3, "cm"),
+                       annotation_legend_param = list(direction = "horizontal",grid_width = unit(0.5, "cm"),
+                                                      grid_height = unit(0.5, "cm"),title_gp = gpar(fontsize = 10), 
+                                                                   labels_gp = gpar(fontsize = 10)),
+                       col = list(SubSystem=c("AA_transport"="#cecdff","Other_transport"="#a5dba9")))
+
+Grp=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Label/Group_trans.txt",
+                 header = TRUE,check.names = FALSE,row.names = 1)
+
+H1=Heatmap(Grp,cluster_columns = FALSE,show_column_names = FALSE,col = col_fun1,top_annotation = ha,row_dend_width = unit(0.5, "cm"),
+           ,row_gap = unit(0.5, "mm"),left_annotation = ha3,row_split = info2$SubSystem,row_dend_reorder = TRUE,
+           column_split = sample$Group,column_dend_height = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),
+           cluster_rows = TRUE,row_title_gp = gpar(fontsize = 0),heatmap_legend_param =list(grid_width = unit(0.5, "cm"),
+                                                                                            grid_height = unit(0.5, "cm"),
+                                                                                            title_gp = gpar(fontsize = 10),
+                                                                                            labels_gp = gpar(fontsize = 10)),
+           name = "Flux",show_row_names = FALSE,row_names_gp=gpar(fontsize = 12),height  = unit(28, "cm"),width  = unit(2, "cm"))
+
+Pers=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Label/Personal_trans.txt",
+                 header = TRUE,check.names = FALSE,row.names = 1)
+
+H2=Heatmap(Pers,cluster_columns = TRUE,show_column_names = FALSE,col = col_fun1,top_annotation = ha2,row_dend_width = unit(0.5, "cm"),
+           ,row_gap = unit(0.5, "mm"),row_split = info2$SubSystem,row_dend_reorder = TRUE,
+           column_split = sample2$Group,column_dend_height = unit(0.5, "cm"),column_title_gp =gpar(fontsize = 0),
+           cluster_rows = TRUE,row_title_gp = gpar(fontsize = 0),heatmap_legend_param =list(grid_width = unit(0.5, "cm"),
+                                                                                            grid_height = unit(0.5, "cm"),
+                                                                                            title_gp = gpar(fontsize = 10),
+                                                                                            labels_gp = gpar(fontsize = 10)),
+           name = "Flux",show_row_names = TRUE,row_names_gp=gpar(fontsize = 8),height  = unit(20, "cm"),width  = unit(10, "cm"))
+
+
+tt=H1+H2
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Label/Transport.pdf",width = 15,height = 12)
+draw(tt,heatmap_legend_side = "left", annotation_legend_side = "left",merge_legend = TRUE)
+dev.off()
+```
+
+```{r}
+library(reshape2)
+library(ggplot2)
+dd=read.delim("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Figures/barIP.txt")
+M=melt(dd)
+
+head(M)
+pdf("/home/anoop/Desktop/Macrophage/Transcriptomics/GEM/GroupLevel/FBA/Merged/Analaysis/Heatmap/Figures/barplot.pdf",width = 12,height = 12)
+ggplot(M, aes(fill=variable, y=value, x=factor(RXN,levels = unique(RXN)))) + 
+    geom_bar(position="dodge", stat="identity",width = 0.8)+coord_flip()+
+  scale_fill_manual(values=c("HC"="#5ca2a2","HIV"="#ffa500"))+ylab("Metabolic Flux")+
+  theme(legend.title=element_text(size=12),legend.text=element_text(size=12),legend.key.size=unit(0.7,"line"),
+        plot.title = element_text(hjust = 0.5,size =9),panel.grid.minor = element_blank(),legend.position = "bottom",
+        axis.title.x=element_text(size=12),axis.title.y = element_blank(),axis.text.y=element_text(size=12),axis.text.x=element_text(size=12),
+        plot.margin = margin(1,6.5,1,6.5, "cm"))
+dev.off()
+```
+
+```{r,fig.height=9, fig.width=10,message=FALSE,warning=FALSE,fig.align = "center"}
+data=read.delim("/home/anoop/Desktop/HIV_SingleCell/Olink/MW/MW_ResultADJ.tab",row.names = 1)
+
+library(ggrepel)
+pdf("/home/anoop/Desktop/HIV_SingleCell/Olink/MW/MW_Result_OLINK2.pdf")
+ggplot(data, aes(x=log2FoldChange, y=-log10(padj))) +theme_bw()+
+    geom_point(data=subset(data, Type == "Other" & padj >=.05),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#d8d8d8",color="#bfbfbf",size=2)+
+  geom_point(data=subset(data, Type == "Other" & padj <.05 & log2FoldChange < 0),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#d7ddea",color="#9daccb",size=2.5)+
+  geom_point(data=subset(data, Type == "Other" & padj <.05 & log2FoldChange > 0),aes(x=log2FoldChange,y=-log10(padj)),pch=21,fill="#efefcc",color="#d8d87f",size=2.5)+
+  geom_point(data=subset(data,Type == "Type" & log2FoldChange < 0),aes(x=log2FoldChange,y=-log10(padj )),pch=21,color="#2f4779",fill="#3b5998",size=2.5)+
+  geom_point(data=subset(data,Type == "Type" & log2FoldChange > 0),aes(x=log2FoldChange,y=-log10(padj )),pch=21,color="#666600",fill="#e5e500",size=2.5)+
+  geom_label_repel(aes(label = Label),segment.color = '#999999',fill=NA,color="black",size=2.5,label.size = NA,nudge_y = 0.75,nudge_x = -0.5,max.overlaps = 200)+
+  geom_vline(xintercept=0, linetype="dashed",size=0.35)+
+  scale_x_continuous(limits = c(-7.5, 5.5), breaks = seq(-7.5, 5.5, by = 2))+
+  geom_hline(yintercept=1.3010299957, linetype="dashed",size=0.35)+
+  theme(legend.title=element_text(size=8),legend.text=element_text(size=6),legend.key.size=unit(0.7,"line"),
+        plot.title = element_text(hjust = 0.5,size =9),panel.grid.minor = element_blank(),
+        axis.title=element_text(size=10),axis.text.y=element_text(size=10),axis.text.x=element_text(size=10),plot.margin = margin(4.5,4,4.5,4, "cm"))+
+  labs(x="Log2 Fold Change",y="-log10 (p.adj)")
+dev.off()
+```
+
